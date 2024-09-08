@@ -25,6 +25,7 @@ enum VariantType {
     MOD_HET_REVERSE_STRAND = -9, // heterozygous reverse strand modification
     MOD_HET = -10, // heterozygous modification
     MOD_HOM = -11, // homozygous modification
+    TANDEM_INDEL_HET = -12, // tandem repeat heterozygous insertion/deletion
 };
 
 struct RefAlt{

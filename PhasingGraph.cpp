@@ -137,7 +137,8 @@ VariantEdge::VariantEdge(int inCurrPos){
 }
 
 //VariantEdge
-std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(int targetPos, bool isONT, double edgeThreshold, bool debug){
+std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, int>::iterator currNodeIter, std::map<int, int>::iterator nextNodeIter, bool isONT, double edgeThreshold, bool debug){
+    int targetPos = nextNodeIter->first;
     std::pair<float,float> refBestPair  = ref->BestPair(targetPos);
     std::pair<float,float> altBestPair  = alt->BestPair(targetPos);
     // get the weight of each pair
@@ -166,14 +167,22 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(int targetPos, bool
         // no connect 
         // not sure which is better
     }
-    
+
+    if((currNodeIter->second == SNP_HET && (nextNodeIter->second == MOD_HET_FORWARD_STRAND || nextNodeIter->second == MOD_HET_REVERSE_STRAND)) ||
+       ((currNodeIter->second == MOD_HET_FORWARD_STRAND || currNodeIter->second == MOD_HET_REVERSE_STRAND) && nextNodeIter->second == SNP_HET)){
+        edgeThreshold = 0.3;
+        if((rr+ra+ar+aa) < 1){
+            edgeThreshold = -1;
+        }
+    }
+
     if( edgeSimilarRatio > edgeThreshold ){
         refAllele = -1;
         altAllele = -1;
     }
     
     if(debug){
-        std::cout<< currPos << "\t->\t" << targetPos << "\t|rr aa | ra ar\t" << "\t" << rr << "\t" << aa << "\t" << ra << "\t" << ar  << "\n";
+        std::cout << currPos << "\t->\t" << targetPos << "\t|rr aa | ra ar\t" << "\t" << rr << "\t" << aa << "\t" << ra << "\t" << ar  << "\n";
     }
     
     // create edge pairs
@@ -212,7 +221,7 @@ void VairiantGraph::edgeConnectResult(){
     int currPos = -1;
     int nextPos = -1;
     int lastConnectPos = -1;
-    
+
     // Visit all position and assign SNPs to haplotype.
     // Avoid recording duplicate information,
     // only one of the two alleles needs to be used for each SNP
@@ -266,7 +275,7 @@ void VairiantGraph::edgeConnectResult(){
         // check connect between surrent SNP and next n SNPs
         for(int i = 0 ; i < params->connectAdjacent ; i++ ){
             // consider reads from the currnt SNP and the next (i+1)'s SNP
-            std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(nextNodeIter->first, params->isONT, params->edgeThreshold, false);
+            std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(variantIter, nextNodeIter, params->isONT, params->edgeThreshold, false);
             // -1 : no connect  
             //  1 : the haplotype of next (i+1)'s SNP are same as previous
             //  2 : the haplotype of next (i+1)'s SNP are different as previous
@@ -492,8 +501,14 @@ void VairiantGraph::readCorrection(){
             auto posPhasingResultIter = posPhasingResult->find(variant.position);
             if( posPhasingResultIter != posPhasingResult->end() ){
                 const PhasingResult& phasingResult = posPhasingResultIter->second;
-                if(variantHaplotype[phasingResult.refHaplotype][variant.allele] == HAPLOTYPE1)haplotype1Count++;
-                else haplotype2Count++;
+                double edgeWeight = 1;
+                if (variant.quality == TANDEM_INDEL_HET || variant.quality == INDEL_HET) {
+                    edgeWeight = 0.1;
+                }else if (variant.quality == MOD_HET_FORWARD_STRAND || variant.quality == MOD_HET_REVERSE_STRAND) {
+                    continue;
+                }
+                if(variantHaplotype[phasingResult.refHaplotype][variant.allele] == HAPLOTYPE1)haplotype1Count += edgeWeight;
+                else haplotype2Count += edgeWeight;
             }
         }
         
