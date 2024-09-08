@@ -25,7 +25,7 @@ enum VariantType {
     MOD_HET_REVERSE_STRAND = -9, // heterozygous reverse strand modification
     MOD_HET = -10, // heterozygous modification
     MOD_HOM = -11, // homozygous modification
-    TANDEM_INDEL_HET = -12, // tandem repeat heterozygous insertion/deletion
+    DANGER_INDEL_HET = -12, // danger heterozygous insertion/deletion
 };
 
 struct RefAlt{
@@ -33,6 +33,7 @@ struct RefAlt{
     std::string Alt;
     bool is_reverse;
     bool is_modify;
+    bool is_danger;
 };
 
 class FastaParser{
@@ -145,6 +146,8 @@ class SnpParser : public BaseVairantParser{
             
         std::map<int, RefAlt> getVariants(std::string chrName);  
 
+	    std::map<int, RefAlt> getVariants_markindel(std::string chrName, const std::string &ref);
+
         std::vector<std::string> getChrVec();
         
         bool findChromosome(std::string chrName);
@@ -248,7 +251,7 @@ class BamParser{
         void get_snp(const  bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, const std::string &ref_string, bool isONT);
    
     public:
-        BamParser(std::string chrName, std::vector<std::string> inputBamFileVec, SnpParser &snpMap, SVParser &svFile, METHParser &modFile);
+        BamParser(std::string chrName, std::vector<std::string> inputBamFileVec, SnpParser &snpMap, SVParser &svFile, METHParser &modFile, const std::string &ref_string);
         ~BamParser();
         
         void direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool, PhasingParameters params, std::vector<ReadVariant> &readVariantVec , const std::string &ref_string);
