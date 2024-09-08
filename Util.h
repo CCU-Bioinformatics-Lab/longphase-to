@@ -52,6 +52,7 @@ struct ReadVariant{
     int reference_start;
     std::string BX_tag;
     bool is_reverse;
+    bool fakeRead;
     
     std::vector<Variant> variantVec;
     
