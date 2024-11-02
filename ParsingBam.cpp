@@ -439,18 +439,16 @@ SnpParser::~SnpParser(){
     delete chrVariant;
 }
 
-std::map<int, RefAlt> SnpParser::getVariants(std::string chrName){
-    std::map<int, RefAlt> targetVariants;
+std::map<int, RefAlt>* SnpParser::getVariants(std::string chrName){
     std::map<std::string, std::map<int, RefAlt> >::iterator chrIter = chrVariant->find(chrName);
     
-    if( chrIter != chrVariant->end() )
-        targetVariants = (*chrIter).second;
-    
-    return targetVariants;
+    if( chrIter != chrVariant->end() ){
+        return &(chrIter->second);
+    }
+    return nullptr;
 }
 
-std::map<int, RefAlt> SnpParser::getVariants_markindel(std::string chrName, const std::string &ref){
-    std::map<int, RefAlt> targetVariants;
+std::map<int, RefAlt>* SnpParser::getVariants_markindel(std::string chrName, const std::string &ref){
     std::map<std::string, std::map<int, RefAlt> >::iterator chrIter = chrVariant->find(chrName);
 
     //Mark the indel which lies in the tandem repeat
@@ -480,14 +478,9 @@ std::map<int, RefAlt> SnpParser::getVariants_markindel(std::string chrName, cons
             innerIter->second.is_danger = danger ;
 
         }
-
-        targetVariants = (*chrIter).second;
+        return &(chrIter->second);
     }
-    else {
-        // Handle the case where chrName doesn't exist in chrVariant
-    }
-
-    return targetVariants;
+    return nullptr;
 }
 
 std::vector<std::string> SnpParser::getChrVec(){
@@ -828,8 +821,8 @@ BamParser::BamParser(std::string inputChrName, std::vector<std::string> inputBam
     currentMod = new std::map<int, std::map<std::string ,RefAlt> >;
     
     // use chromosome to find recorded snp map
-    //(*currentVariants) = snpMap.getVariants(chrName);
-    (*currentVariants) = snpMap.getVariants_markindel(chrName, ref_string);
+    //currentVariants = snpMap.getVariants(chrName);
+    currentVariants = snpMap.getVariants_markindel(chrName, ref_string);
     // set skip variant start iterator
     firstVariantIter = currentVariants->begin();
     if( firstVariantIter == currentVariants->end() ){
@@ -846,7 +839,7 @@ BamParser::BamParser(std::string inputChrName, std::vector<std::string> inputBam
 }
 
 BamParser::~BamParser(){
-    delete currentVariants;
+    // delete currentVariants;
     delete currentSV;
     delete currentMod;
 }

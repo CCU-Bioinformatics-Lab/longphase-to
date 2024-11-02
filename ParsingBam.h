@@ -144,9 +144,9 @@ class SnpParser : public BaseVairantParser{
         SnpParser(PhasingParameters &in_params);
         ~SnpParser();
             
-        std::map<int, RefAlt> getVariants(std::string chrName);  
+        std::map<int, RefAlt>* getVariants(std::string chrName);  
 
-	    std::map<int, RefAlt> getVariants_markindel(std::string chrName, const std::string &ref);
+	    std::map<int, RefAlt>* getVariants_markindel(std::string chrName, const std::string &ref);
 
         std::vector<std::string> getChrVec();
         
