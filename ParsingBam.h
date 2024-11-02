@@ -33,6 +33,7 @@ enum VariantGenotype {
 struct RefAlt{
     std::string Ref;
     std::string Alt;
+    float vaf;
     bool is_reverse;
     bool is_modify;
     bool is_danger;
@@ -139,7 +140,8 @@ class SnpParser : public BaseVairantParser{
         void parserProcess(std::string &input);
         void fetchAndValidateTag(const int checkTag, const char *tag, hts_pos_t pos);
         VariantGenotype confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
-        void recordVariant(std::string &chr, bcf1_t *rec, std::map<std::string, std::map<int, RefAlt> > *chrVariant);
+        float getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
+        void recordVariant(std::string &chr, bcf1_t *rec, float vaf, std::map<std::string, std::map<int, RefAlt> > *chrVariant);
 
     public:
 

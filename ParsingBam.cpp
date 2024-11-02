@@ -426,6 +426,14 @@ SnpParser::SnpParser(PhasingParameters &in_params){
         std::cout << "error or a positive integer if the list contains samples not present in the VCF header\n";
     }
 
+    // deepvariant use VAF
+    // clair3 use AF
+    const char* vafTagName = "AF";
+    int tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, vafTagName);
+    if (!bcf_hdr_idinfo_exists(hdr, BCF_HL_FMT, tag_id)) {
+        vafTagName = "VAF";
+    }
+
     // struct for storing each record
     bcf1_t *rec = bcf_init();
 
@@ -433,10 +441,11 @@ SnpParser::SnpParser(PhasingParameters &in_params){
         // snp or indel
         if (bcf_is_snp(rec) || params->phaseIndel) {
             VariantGenotype parserType = confirmRequiredGT(hdr, rec, "GT", rec->pos);
+            float vaf = getVAF(hdr, rec, vafTagName, rec->pos);
             if ( parserType != GENOTYPE_UNDEFINED ) {
                 // get chromosome string
                 std::string chr = seqnames[rec->rid];
-                recordVariant(chr, rec, chrVariant);
+                recordVariant(chr, rec, vaf, chrVariant);
             }
         }
     }
@@ -562,13 +571,23 @@ VariantGenotype SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line,
     }
 }
 
-void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, std::map<std::string, std::map<int, RefAlt> > *chrVariant) {
+float SnpParser::getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos){
+    
+    int nvaf_arr = 0;
+    float *vaf = nullptr;
+    int checkTag = bcf_get_format_float(hdr, line, tag, &vaf, &nvaf_arr);
+    fetchAndValidateTag(checkTag, tag, pos);
+    return vaf[0];
+}
+
+void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, float vaf, std::map<std::string, std::map<int, RefAlt> > *chrVariant) {
     // position is 0-base
     int variantPos = rec->pos;
     // get r alleles
     RefAlt tmp;
     tmp.Ref = rec->d.allele[0];
     tmp.Alt = rec->d.allele[1];
+    tmp.vaf = vaf;
     
     //prevent the MAVs calling error which makes the GT=0/1
     if ( rec->d.allele[1][tmp.Alt.size()+1] != '\0' ){
