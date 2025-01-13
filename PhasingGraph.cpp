@@ -29,7 +29,7 @@ void SubEdge::addSubEdge(Variant &currentNode, Variant &connectNode, std::string
     if(fakeRead){
         edgeWeight = 0.01;
     }
-    else if( (currentNode.quality > UNDEFINED && currentNode.quality < conditionQuality ) || (connectNode.quality > UNDEFINED && connectNode.quality < conditionQuality ) ){
+    else if( (currentNode.quality > VARIANT_UNDEFINED && currentNode.quality < conditionQuality ) || (connectNode.quality > VARIANT_UNDEFINED && connectNode.quality < conditionQuality ) ){
         edgeWeight = lowQualityWeight;
     }
 
@@ -193,8 +193,8 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, int>:
         // not sure which is better
     }
 
-    if((currNodeIter->second == SNP_HET && (nextNodeIter->second == MOD_HET_FORWARD_STRAND || nextNodeIter->second == MOD_HET_REVERSE_STRAND)) ||
-       ((currNodeIter->second == MOD_HET_FORWARD_STRAND || currNodeIter->second == MOD_HET_REVERSE_STRAND) && nextNodeIter->second == SNP_HET)){
+    if((currNodeIter->second == SNP && (nextNodeIter->second == MOD_FORWARD_STRAND || nextNodeIter->second == MOD_REVERSE_STRAND)) ||
+       ((currNodeIter->second == MOD_FORWARD_STRAND || currNodeIter->second == MOD_REVERSE_STRAND) && nextNodeIter->second == SNP)){
         edgeThreshold = 0.3;
         if((rr+ra+ar+aa) < 1){
             edgeThreshold = -1;
@@ -267,7 +267,7 @@ std::pair<float,float> VairiantGraph::Onelongcase( std::vector<VoteResult> vote 
             counter++ ;
         }
 	    // we will only count the votes that is not INDEL and have lower ESR beacause the INDEL is the variant has higher error rate and the lower ESR means higher reads consistency,
-        else if ( vote[i].ESR < 0.2 && vote[i].weight >= 1 && (*variantPosType)[vote[i].Pos] != INDEL_HET ) {
+        else if ( vote[i].ESR < 0.2 && vote[i].weight >= 1 && (*variantPosType)[vote[i].Pos] != INDEL ) {
             if ( vote[i].hap == 1 ) {
                 h1+=vote[i].weight ;
             }
@@ -308,7 +308,7 @@ void VairiantGraph::edgeConnectResult(){
         // check next position
         auto nextNodeIter = std::next(variantIter, 1);
         if( nextNodeIter == variantPosType->end() ){
-             break;
+            break;
         }
         
         currPos = variantIter->first;
@@ -368,7 +368,7 @@ void VairiantGraph::edgeConnectResult(){
             std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(variantIter, nextNodeIter, params->isONT, params->edgeThreshold, vote, false);
             
             // if the target is a danger indel change its weight to 0.1
-            if ( (*variantPosType)[currPos] == DANGER_INDEL_HET ) {
+            if ( (*variantPosType)[currPos] == DANGER_INDEL ) {
                 vote.weight = 0.1 ;
             }
             // -1 : no connect  
@@ -555,11 +555,11 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
         // Visiting all the variants on the read
         for( auto variant : (*readIter).variantVec ){
             readCount++;
-            if( variant.quality <= UNDEFINED ){
+            if( variant.quality <= VARIANT_UNDEFINED ){
                 (*variantPosType)[variant.position] = variant.quality;
             }
             else{
-                (*variantPosType)[variant.position] = SNP_HET;
+                (*variantPosType)[variant.position] = SNP;
             }
 
             mergeReadMap[(*readIter).read_name].variantVec.push_back(variant);
@@ -661,9 +661,9 @@ void VairiantGraph::readCorrection(){
                 if(fakeSnp){
                     edgeWeight = 0.01;
                 }
-                else if (variant.quality == DANGER_INDEL_HET || variant.quality == INDEL_HET) {
+                else if (variant.quality == DANGER_INDEL || variant.quality == INDEL) {
                     edgeWeight = 0.1;
-                }else if (variant.quality == MOD_HET_FORWARD_STRAND || variant.quality == MOD_HET_REVERSE_STRAND) {
+                }else if (variant.quality == MOD_FORWARD_STRAND || variant.quality == MOD_REVERSE_STRAND) {
                     continue;
                 }
                 if(variantHaplotype[phasingResult.refHaplotype][variant.allele] == HAPLOTYPE1)haplotype1Count += edgeWeight;

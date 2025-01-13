@@ -14,18 +14,20 @@
 #include <zlib.h>
 
 enum VariantType {
-    UNDEFINED = -1,
-    SNP_HET = -2, // heterozygous Single Nucleotide Polymorphism
-    SNP_HOM = -3, // homozygous Single Nucleotide Polymorphism
-    INDEL_HET = -4, // heterozygous insertion/deletion
-    INDEL_HOM = -5, // homozygous insertion/deletion
-    SV_HET = -6, // heterozygous structure variation
-    SV_HOM = -7, // homozygous structure variation
-    MOD_HET_FORWARD_STRAND = -8, // heterozygous forward strand modification
-    MOD_HET_REVERSE_STRAND = -9, // heterozygous reverse strand modification
-    MOD_HET = -10, // heterozygous modification
-    MOD_HOM = -11, // homozygous modification
-    DANGER_INDEL_HET = -12, // danger heterozygous insertion/deletion
+    // A VariantType value > 0 represents the quality of the read variant base and indicates that its type is SNP = -2.
+    VARIANT_UNDEFINED = -1, // Undefined variant type
+    SNP = -2, // Single Nucleotide Polymorphism
+    INDEL = -3, // Insertion/Deletion
+    SV = -4, // Structure Variation
+    MOD_FORWARD_STRAND = -5, // Forward Strand Modification
+    MOD_REVERSE_STRAND = -6, // Reverse Strand Modification
+    DANGER_INDEL = -7, // Danger Insertion/Deletion
+};
+
+enum VariantGenotype {
+    HOM = 1, // homozygous
+    HET = 0, // heterozygous
+    GENOTYPE_UNDEFINED = -1, // undefined genotype
 };
 
 struct RefAlt{

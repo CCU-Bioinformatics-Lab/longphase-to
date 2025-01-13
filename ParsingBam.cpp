@@ -426,7 +426,7 @@ SnpParser::SnpParser(PhasingParameters &in_params){
         // snp or indel
         if (bcf_is_snp(rec) || params->phaseIndel) {
             parserType = confirmRequiredGT(hdr, rec, "GT", rec->pos);
-            if ( parserType != UNDEFINED ) {
+            if ( parserType != GENOTYPE_UNDEFINED ) {
                 // get chromosome string
                 std::string chr = seqnames[rec->rid];
                 recordVariant(chr, rec, chrVariant);
@@ -543,7 +543,7 @@ int SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char 
     if ((gt[0] == 2 && gt[1] == 4) || (gt[0] == 4 && gt[1] == 2) || // 0/1, 1/0
         (gt[0] == 2 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 3) || // 0|1, 1|0
         (gt[0] == 0 && gt[1] == 3) || (gt[0] == 2 && gt[1] == 1)) { // .|0, 0|.
-        return SNP_HET;
+        return HET;
     }
     // // homo SNP
     // else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
@@ -552,7 +552,7 @@ int SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char 
     //     return SNP_HOM;
     // }
     else {
-        return UNDEFINED;
+        return GENOTYPE_UNDEFINED;
     }
 }
 
@@ -987,7 +987,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                     if( (*readIter).second.is_reverse == bam_is_rev(&aln) ){
                         int allele = ((*readIter).second.is_modify ? 0 : 1) ;
                         // using this quality to identify modification forward/reverse
-                        int quality = (bam_is_rev(&aln) ? MOD_HET_REVERSE_STRAND : MOD_HET_FORWARD_STRAND);
+                        int quality = (bam_is_rev(&aln) ? MOD_REVERSE_STRAND : MOD_FORWARD_STRAND);
                         Variant *tmpVariant = new Variant(modPos, allele, quality );
                         // push mod into result vector
                         (*tmpReadResult).variantVec.push_back( (*tmpVariant) );
@@ -1012,7 +1012,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                 }
                 // use quality SV_HET to identify SVs
                 // push this SV to vector
-                Variant *tmpVariant = new Variant(svPos, allele, SV_HET );
+                Variant *tmpVariant = new Variant(svPos, allele, SV );
                 (*tmpReadResult).variantVec.push_back( (*tmpVariant) );
                 delete tmpVariant;
                 // next SV iter 
@@ -1033,7 +1033,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                     int refAlleleLen = (*currentVariantIter).second.Ref.length();
                     int altAlleleLen = (*currentVariantIter).second.Alt.length();
                     int offset = variantPos - ref_pos;
-                    int base_q = UNDEFINED;
+                    int base_q = VARIANT_UNDEFINED;
                     int allele = -1;
                     
                     // The position of the variant exceeds the length of the read.
@@ -1069,9 +1069,9 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                             allele = 0 ;
                         }
                         // using this quality to identify indel
-                        base_q = INDEL_HET;
+                        base_q = INDEL;
                         if ( (*currentVariantIter).second.is_danger ) {
-                            base_q = DANGER_INDEL_HET ;
+                            base_q = DANGER_INDEL ;
                         }
                     } 
             
@@ -1086,9 +1086,9 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                             allele = 0 ;
                         }
                         // using this quality to identify indel
-                        base_q = INDEL_HET;
+                        base_q = INDEL;
                         if ( (*currentVariantIter).second.is_danger ) {
-                            base_q = DANGER_INDEL_HET ;
+                            base_q = DANGER_INDEL ;
                         }
                     } 
             
@@ -1140,7 +1140,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                         
                         int refAlleleLen = (*currentVariantIter).second.Ref.length();
                         int altAlleleLen = (*currentVariantIter).second.Alt.length();
-                        int base_q = UNDEFINED;
+                        int base_q = VARIANT_UNDEFINED;
                         
                         if( query_pos + 1 > aln.core.l_qseq ){
                             return;
@@ -1169,12 +1169,12 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
 
                                 allele = 1;
                                 // using this quality to identify indel
-                                base_q = INDEL_HET;
+                                base_q = INDEL;
                             }
                             else if ( allele == -1 ) {
                                 allele = 0;
                                 // using this quality to identify indel
-                                base_q = INDEL_HET;
+                                base_q = INDEL;
                             }
                             
                         }
