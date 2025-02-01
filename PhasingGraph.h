@@ -57,6 +57,12 @@ struct VoteResult{
     VoteResult( int currPos, float weight ) ;
 };
 
+struct VariantInfo {
+    int type;
+    // bool homozygous; // 0 heterozygous 1 homozygous
+    // bool somatic; // 0 germline 1 somatic
+};
+
 struct VariantEdge{
     int currPos;
     SubEdge* alt;
@@ -68,7 +74,7 @@ struct VariantEdge{
     
     VariantEdge(int currPos);
     // node pair 
-    std::pair<PosAllele,PosAllele> findBestEdgePair(std::map<int, int>::iterator currNodeIter, std::map<int, int>::iterator nextNodeIter, bool isONT, double diffRatioThreshold, VoteResult &vote, bool debug);
+    std::pair<PosAllele,PosAllele> findBestEdgePair(std::map<int, VariantInfo>::iterator currNodeIter, std::map<int, VariantInfo>::iterator nextNodeIter, bool isONT, double diffRatioThreshold, VoteResult &vote, bool debug);
     // number of read of two node. AA and AB combination
     std::pair<float,float> findNumberOfRead(int targetPos);
     bool get_fakeSnp();
@@ -88,11 +94,6 @@ struct EdgeResult{
     int aa;
 };
 
-enum Haplotype {
-    HAPLOTYPE1 = 0,
-    HAPLOTYPE2 = 1
-};
-
 class VairiantGraph{
     
     private:
@@ -105,7 +106,7 @@ class VairiantGraph{
         // position, edge
         std::map<int,VariantEdge*> *edgeList;
         // position, type
-        std::map<int,int> *variantPosType;
+        std::map<int,VariantInfo> *variantPosType;
 
         // position phasing result
         PosPhasingResult *posPhasingResult;

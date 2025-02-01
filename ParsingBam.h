@@ -100,7 +100,7 @@ using FormatDefs = std::vector<FormatInfo>;
 class BaseVairantParser{
 
     protected:
-        virtual bool checkType(const std::string& chr, int pos) const = 0;
+        virtual bool checkType(const int type) const = 0;
         FormatDefs formatDefs = {
             {"GT", "1", "String", "Genotype", false},
             {"PS", "1", "Integer", "Phase set identifier", false},
@@ -137,8 +137,8 @@ class SnpParser : public BaseVairantParser{
         
         // override input parser
         void parserProcess(std::string &input);
-        void fetchAndValidateTag(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, int **dst, int *ndst, hts_pos_t pos);
-        int confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
+        void fetchAndValidateTag(const int checkTag, const char *tag, hts_pos_t pos);
+        VariantGenotype confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
         void recordVariant(std::string &chr, bcf1_t *rec, std::map<std::string, std::map<int, RefAlt> > *chrVariant);
 
     public:
@@ -162,7 +162,7 @@ class SnpParser : public BaseVairantParser{
         
         void filterSNP(std::string chr, std::vector<ReadVariant> &readVariantVec, std::string &chr_reference);
 
-        bool checkType(const std::string& chr, int pos) const override;
+        bool checkType(const int type) const override;
 };
 
 class SVParser : public BaseVairantParser{
@@ -189,7 +189,7 @@ class SVParser : public BaseVairantParser{
 
         bool findSV(std::string chr, int posistion);
 
-        bool checkType(const std::string& chr, int pos) const override;
+        bool checkType(const int type) const override;
 };
 
 class METHParser : public BaseVairantParser{
@@ -220,7 +220,7 @@ class METHParser : public BaseVairantParser{
 		
 		void writeResult(ChrPhasingResult &chrPhasingResult);
 
-        bool checkType(const std::string& chr, int pos) const override;
+        bool checkType(const int type) const override;
 };
 
 struct Alignment{

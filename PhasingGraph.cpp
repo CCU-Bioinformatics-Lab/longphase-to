@@ -59,17 +59,17 @@ std::pair<float,float> SubEdge::BestPair(int targetPos){
 float SubEdge::getRefReadCount(int targetPos){
     std::map<int, float>::iterator posIter = refReadCount->find(targetPos);
     if( posIter != refReadCount->end() ){
-        return (*refReadCount)[targetPos];
+        return posIter->second;
     }
-    return 0;
+    return 0.0f;
 }
 
 float SubEdge::getAltReadCount(int targetPos){
     std::map<int, float>::iterator posIter = altReadCount->find(targetPos);
     if( posIter != altReadCount->end() ){
-        return (*altReadCount)[targetPos];
+        return posIter->second;
     }
-    return 0;
+    return 0.0f;
 }
 
 std::vector<std::string> SubEdge::showEdge(std::string message){
@@ -160,7 +160,7 @@ bool VariantEdge::get_fakeSnp(){
 }  
 
 //VariantEdge
-std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, int>::iterator currNodeIter, std::map<int, int>::iterator nextNodeIter, bool isONT, double edgeThreshold, VoteResult &vote, bool debug){
+std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, VariantInfo>::iterator currNodeIter, std::map<int, VariantInfo>::iterator nextNodeIter, bool isONT, double edgeThreshold, VoteResult &vote, bool debug){
     int targetPos = nextNodeIter->first;
     std::pair<float,float> refBestPair  = ref->BestPair(targetPos);
     std::pair<float,float> altBestPair  = alt->BestPair(targetPos);
@@ -193,8 +193,8 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, int>:
         // not sure which is better
     }
 
-    if((currNodeIter->second == SNP && (nextNodeIter->second == MOD_FORWARD_STRAND || nextNodeIter->second == MOD_REVERSE_STRAND)) ||
-       ((currNodeIter->second == MOD_FORWARD_STRAND || currNodeIter->second == MOD_REVERSE_STRAND) && nextNodeIter->second == SNP)){
+    if((currNodeIter->second.type == SNP && (nextNodeIter->second.type == MOD_FORWARD_STRAND || nextNodeIter->second.type == MOD_REVERSE_STRAND)) ||
+       ((currNodeIter->second.type == MOD_FORWARD_STRAND || currNodeIter->second.type == MOD_REVERSE_STRAND) && nextNodeIter->second.type == SNP)){
         edgeThreshold = 0.3;
         if((rr+ra+ar+aa) < 1){
             edgeThreshold = -1;
@@ -267,7 +267,7 @@ std::pair<float,float> VairiantGraph::Onelongcase( std::vector<VoteResult> vote 
             counter++ ;
         }
 	    // we will only count the votes that is not INDEL and have lower ESR beacause the INDEL is the variant has higher error rate and the lower ESR means higher reads consistency,
-        else if ( vote[i].ESR < 0.2 && vote[i].weight >= 1 && (*variantPosType)[vote[i].Pos] != INDEL ) {
+        else if ( vote[i].ESR < 0.2 && vote[i].weight >= 1 && (*variantPosType)[vote[i].Pos].type != INDEL ) {
             if ( vote[i].hap == 1 ) {
                 h1+=vote[i].weight ;
             }
@@ -345,12 +345,12 @@ void VairiantGraph::edgeConnectResult(){
             }
 
             blockStart = currPos;
-            posPhasingResult->emplace(currPos, PhasingResult(HAPLOTYPE1, blockStart));
+            posPhasingResult->emplace(currPos, PhasingResult(HAPLOTYPE1, blockStart, variantIter->second.type));
         }
         else{
             if( h1 > h2 || h1 < h2 ){
                 int currHP = ( h1 > h2 ? HAPLOTYPE1 : HAPLOTYPE2 );
-                posPhasingResult->emplace(currPos, PhasingResult(currHP, blockStart));
+                posPhasingResult->emplace(currPos, PhasingResult(currHP, blockStart, variantIter->second.type));
             }
         }
         
@@ -368,7 +368,7 @@ void VairiantGraph::edgeConnectResult(){
             std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(variantIter, nextNodeIter, params->isONT, params->edgeThreshold, vote, false);
             
             // if the target is a danger indel change its weight to 0.1
-            if ( (*variantPosType)[currPos] == DANGER_INDEL ) {
+            if ( (*variantPosType)[currPos].type == DANGER_INDEL ) {
                 vote.weight = 0.1 ;
             }
             // -1 : no connect  
@@ -429,7 +429,7 @@ VairiantGraph::VairiantGraph(std::string &in_ref, PhasingParameters &in_params){
     params=&in_params;
     ref=&in_ref;
     
-    variantPosType = new std::map<int,int>;
+    variantPosType = new std::map<int,VariantInfo>;
     edgeList = new std::map<int,VariantEdge*>;
     readHpMap = new std::map<std::string,int>;
 }
@@ -537,15 +537,15 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
     // merge alignment
     for(std::vector<ReadVariant>::iterator readIter = in_readVariant.begin() ; readIter != in_readVariant.end() ; readIter++ ){
 
-	std::map<std::string,ReadVariant>::iterator posIter = mergeReadMap.find((*readIter).read_name) ;
+        std::map<std::string,ReadVariant>::iterator posIter = mergeReadMap.find((*readIter).read_name) ;
 
-	// fakeRead is initialize as fake
-	if ( posIter == mergeReadMap.end() ) {
+        // fakeRead is initialize as fake
+        if ( posIter == mergeReadMap.end() ) {
             mergeReadMap[(*readIter).read_name].fakeRead = false ;
         }
         //std::cout << (*readIter).mm_rate << "\n";
 
-	//if the mmrate too high we think it's a fake read
+	    //if the mmrate too high we think it's a fake read
         if( (*readIter).fakeRead == true ){
           mergeReadMap[(*readIter).read_name].fakeRead = true ;
         }
@@ -556,10 +556,10 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
         for( auto variant : (*readIter).variantVec ){
             readCount++;
             if( variant.quality <= VARIANT_UNDEFINED ){
-                (*variantPosType)[variant.position] = variant.quality;
+                (*variantPosType)[variant.position].type = variant.quality;
             }
             else{
-                (*variantPosType)[variant.position] = SNP;
+                (*variantPosType)[variant.position].type = SNP;
             }
 
             mergeReadMap[(*readIter).read_name].variantVec.push_back(variant);
@@ -579,13 +579,13 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
             if( posIter == edgeList->end() )
                 (*edgeList)[variant1Iter->position] = new VariantEdge(variant1Iter->position);
 
-	    //count the ref and alt base amount on the variant
-	    if( (*variant1Iter).allele == 0 && (*readIter).second.fakeRead == false ) {
+            //count the ref and alt base amount on the variant
+            if( (*variant1Iter).allele == 0 && (*readIter).second.fakeRead == false ) {
                 (*edgeList)[(*variant1Iter).position]->refcnt++ ;
-	    }
+            }
             if( (*variant1Iter).allele == 1 && (*readIter).second.fakeRead == false ) {
                 (*edgeList)[(*variant1Iter).position]->altcnt++ ;
-	    }
+            }
             (*edgeList)[(*variant1Iter).position]->coverage++;
 
             // add edge process
@@ -609,7 +609,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
         }
 
         //count the ref and alt base amount of the last variant on the read
-	if ( variant1Iter != (*readIter).second.variantVec.end() && variant2Iter == (*readIter).second.variantVec.end() ) {
+	    if ( variant1Iter != (*readIter).second.variantVec.end() && variant2Iter == (*readIter).second.variantVec.end() ) {
             std::map<int,VariantEdge*>::iterator posIter = edgeList->find((*variant1Iter).position);
             if( posIter == edgeList->end() ) {
                 (*edgeList)[(*variant1Iter).position] = new VariantEdge((*variant1Iter).position);
@@ -620,7 +620,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
                 (*edgeList)[(*variant1Iter).position]->refcnt++ ;
             if( (*variant1Iter).allele == 1 && (*readIter).second.fakeRead == false)
                 (*edgeList)[(*variant1Iter).position]->altcnt++ ;
-	    (*edgeList)[(*variant1Iter).position]->coverage++;
+            (*edgeList)[(*variant1Iter).position]->coverage++;
         }
     }
 } 

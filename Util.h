@@ -13,12 +13,20 @@
 #include <vector>
 #include <omp.h>
 
+enum Haplotype {
+    HAPLOTYPE_UNDEFINED = -1,
+    HAPLOTYPE1 = 0,
+    HAPLOTYPE2 = 1
+};
+
 struct PhasingResult {
     int refHaplotype;
     int phaseSet;
-    PhasingResult() = default;
-    PhasingResult(int inRefHaplotype, int inPhaseSet)
-        : refHaplotype(inRefHaplotype), phaseSet(inPhaseSet) {}
+    int type;
+
+    PhasingResult(): refHaplotype(-1), phaseSet(-1), type(-1) {}
+    PhasingResult(int inRefHaplotype, int inPhaseSet, int inType)
+        : refHaplotype(inRefHaplotype), phaseSet(inPhaseSet), type(inType) {}
 };
 typedef std::map<int,PhasingResult> PosPhasingResult;
 typedef std::map<std::string, PosPhasingResult> ChrPhasingResult;

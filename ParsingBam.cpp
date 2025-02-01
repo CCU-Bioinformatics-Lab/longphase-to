@@ -128,7 +128,7 @@ void FormatSample::eraseFormatSample(const std::string &flag) {
 }
 
 void FormatSample::addFlagAndValue(const std::string &flagBase, const int inValue, const std::string &flagAdd) {
-    std::string value = inValue != 0 ? std::to_string(inValue) : ".";
+    std::string value = inValue != -1 ? std::to_string(inValue) : ".";
     addValues(flagBase + flagAdd, value);
 }
 
@@ -353,21 +353,20 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
         const auto& posPhasingResult = chrPhasingResult[fields[CHROM]];
         const auto& posPhasingResultIter = posPhasingResult.find(pos);
         // Check if the variant is extracted from this VCF
-        bool isType = checkType(fields[CHROM], pos);
-        std::string flagAdd = "";
-
+        std::string suffix = "";
         // this pos is phase
-        if( posPhasingResultIter != posPhasingResult.end() && isType ){
+        if( posPhasingResultIter != posPhasingResult.end() && checkType(posPhasingResultIter->second.type) ){
             const auto& phasingResult = posPhasingResultIter->second;
             auto refHaplotype = phasingResult.refHaplotype;
-            auto altHaplotype = refHaplotype == 0 ? 1 :0;
+            auto altHaplotype = refHaplotype == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1;
+            auto phaseSet = phasingResult.phaseSet == -1 ? -1 : phasingResult.phaseSet + 1;
             std::string gtValue = std::to_string(refHaplotype) + "|" + std::to_string(altHaplotype);
-            formatSample.setGTFlagAndValue("GT", gtValue, flagAdd);
-            formatSample.addFlagAndValue("PS", phasingResult.phaseSet + 1, flagAdd);
+            formatSample.setGTFlagAndValue("GT", gtValue, suffix);
+            formatSample.addFlagAndValue("PS", phaseSet, suffix);
         }
         // this pos has not been phased
         else{
-            formatSample.addFlagAndValue("PS", 0, flagAdd);
+            formatSample.addFlagAndValue("PS", -1, suffix);
         }
 
         for(std::vector<std::string>::iterator fieldIter = fields.begin(); fieldIter != fields.end(); ++fieldIter){
@@ -379,14 +378,23 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
     }
 }
 
-bool SnpParser::checkType(const std::string& chr, int pos) const {
-    return (*chrVariant)[chr].find(pos)!= (*chrVariant)[chr].end();
+bool SnpParser::checkType(const int type) const {
+    if(type == SNP|| type == INDEL || type == DANGER_INDEL){
+        return true;
+    }
+    return false;
 }
-bool SVParser::checkType(const std::string& chr, int pos) const {
-    return (*chrVariant)[chr].find(pos)!= (*chrVariant)[chr].end();
+bool SVParser::checkType(const int type) const {
+    if(type == SV){
+        return true;
+    }
+    return false;
 }
-bool METHParser::checkType(const std::string& chr, int pos) const {
-    return (*chrVariant)[chr].find(pos)!= (*chrVariant)[chr].end();
+bool METHParser::checkType(const int type) const {
+    if(type == MOD_FORWARD_STRAND || type == MOD_REVERSE_STRAND){
+        return true;
+    }
+    return false;
 }
 
 // SNP
@@ -420,12 +428,11 @@ SnpParser::SnpParser(PhasingParameters &in_params){
 
     // struct for storing each record
     bcf1_t *rec = bcf_init();
-    int parserType = 0;
 
     while (bcf_read(inf, hdr, rec) == 0) {
         // snp or indel
         if (bcf_is_snp(rec) || params->phaseIndel) {
-            parserType = confirmRequiredGT(hdr, rec, "GT", rec->pos);
+            VariantGenotype parserType = confirmRequiredGT(hdr, rec, "GT", rec->pos);
             if ( parserType != GENOTYPE_UNDEFINED ) {
                 // get chromosome string
                 std::string chr = seqnames[rec->rid];
@@ -524,20 +531,19 @@ void SnpParser::writeResult(ChrPhasingResult &chrPhasingResult){
 void SnpParser::parserProcess(std::string &input){
 }
 
-void SnpParser::fetchAndValidateTag(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, int **dst, int *ndst, hts_pos_t pos){
-    int checkTag = bcf_get_format_int32(hdr, line, tag, dst, ndst);
-
-    if(checkTag<0){
+void SnpParser::fetchAndValidateTag(const int checkTag, const char *tag, hts_pos_t pos){
+    if(checkTag < 0){
         std::cerr<< "pos " << pos << " missing " << tag <<" value" << "\n";
         exit(1);
     }
 }
 
-int SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos){
+VariantGenotype SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos){
     
     int ngt_arr = 0;
     int *gt = NULL;
-    fetchAndValidateTag(hdr, line, tag, &gt, &ngt_arr, pos);
+    int checkTag = bcf_get_format_int32(hdr, line, tag, &gt, &ngt_arr);
+    fetchAndValidateTag(checkTag, tag, pos);
     
     // hetero SNP
     if ((gt[0] == 2 && gt[1] == 4) || (gt[0] == 4 && gt[1] == 2) || // 0/1, 1/0
@@ -549,7 +555,7 @@ int SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char 
     // else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
     //          (gt[0] == 4 && gt[1] == 5) || // 1|1
     //          (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1)) { // .|1, 1|.
-    //     return SNP_HOM;
+    //     return HOM;
     // }
     else {
         return GENOTYPE_UNDEFINED;
@@ -561,7 +567,7 @@ void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, std::map<std::strin
     int variantPos = rec->pos;
     // get r alleles
     RefAlt tmp;
-    tmp.Ref = rec->d.allele[0]; 
+    tmp.Ref = rec->d.allele[0];
     tmp.Alt = rec->d.allele[1];
     
     //prevent the MAVs calling error which makes the GT=0/1
@@ -1114,12 +1120,12 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
         if( cigar_op == 0 || cigar_op == 7 || cigar_op == 8 ){
             query_pos += cigar_oplen;
             ref_pos += cigar_oplen;
-	    cigar_total_oplen += cigar_oplen;
+	        cigar_total_oplen += cigar_oplen;
         }
         // 1: insertion to the reference
         else if( cigar_op == 1 ){
             query_pos += cigar_oplen;
-	    cigar_indel_oplen += cigar_oplen;
+	        cigar_indel_oplen += cigar_oplen;
             cigar_total_oplen += cigar_oplen;
         }
         else if( cigar_op == 2 ){
@@ -1190,7 +1196,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                 }
             }
             ref_pos += cigar_oplen;
-	    cigar_del_oplen += cigar_oplen;
+	        cigar_del_oplen += cigar_oplen;
             cigar_indel_oplen += cigar_oplen;
             cigar_total_oplen += cigar_oplen;
         }
@@ -1202,16 +1208,16 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
         // 4: soft clipping (clipped sequences present in SEQ)
         else if( cigar_op == 4 ){
             query_pos += cigar_oplen;
-	    cigar_clip_oplen += cigar_oplen;
-            cigar_total_oplen += cigar_oplen;
-        }
-        // 5: hard clipping (clipped sequences NOT present in SEQ)
-	else if( cigar_op == 5 ){
             cigar_clip_oplen += cigar_oplen;
             cigar_total_oplen += cigar_oplen;
         }
-	// 6: padding (silent deletion from padded reference)
-	else if(cigar_op == 6 ){
+        // 5: hard clipping (clipped sequences NOT present in SEQ)
+        else if( cigar_op == 5 ){
+            cigar_clip_oplen += cigar_oplen;
+            cigar_total_oplen += cigar_oplen;
+        }
+        // 6: padding (silent deletion from padded reference)
+        else if(cigar_op == 6 ){
             cigar_total_oplen += cigar_oplen;
         }
         else{
