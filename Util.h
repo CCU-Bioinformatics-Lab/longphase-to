@@ -19,6 +19,12 @@ enum Haplotype {
     HAPLOTYPE2 = 1
 };
 
+enum Allele {
+    Allele_UNDEFINED = -1,
+    REF_ALLELE = 0,
+    ALT_ALLELE = 1
+};
+
 struct PhasingResult {
     int refHaplotype;
     int phaseSet;

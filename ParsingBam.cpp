@@ -1011,10 +1011,10 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                 std::map<std::string ,bool>::iterator readIter = (*currentSV)[svPos].find(bam_get_qname(&aln));
                 // If this read not contain SV, it means this read is the same as reference genome.
                 // default this read the same as ref
-                int allele = 0; 
+                int allele = REF_ALLELE; 
                 // this read contain SV.
                 if( readIter != (*currentSV)[svPos].end() ){
-                    allele = 1;
+                    allele = ALT_ALLELE;
                 }
                 // use quality SV_HET to identify SVs
                 // push this SV to vector
@@ -1040,7 +1040,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                     int altAlleleLen = (*currentVariantIter).second.Alt.length();
                     int offset = variantPos - ref_pos;
                     int base_q = VARIANT_UNDEFINED;
-                    int allele = -1;
+                    int allele = Allele_UNDEFINED;
                     
                     // The position of the variant exceeds the length of the read.
                     if( query_pos + offset + 1 > int(aln.core.l_qseq) ){
@@ -1051,9 +1051,9 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                     if( refAlleleLen == 1 && altAlleleLen == 1){
                         char base = seq_nt16_str[bam_seqi(bam_get_seq(&aln), query_pos + offset)];
                         if(base == (*currentVariantIter).second.Ref[0])
-                            allele = 0;
+                            allele = REF_ALLELE;
                         else if(base == (*currentVariantIter).second.Alt[0])
-                            allele = 1;
+                            allele = ALT_ALLELE;
 
                         base_q = bam_get_qual(&aln)[query_pos + offset];
                     } 
@@ -1069,10 +1069,10 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                         // std::string prevIns = ( align.op[i-1] == 1 ? qseq.substr(prev_query_pos, align.ol[i-1]) : "" );
 
                         if ( ref_pos + cigar_oplen - 1 == variantPos && bam_cigar_op(cigar[i+1]) == 1 ) {
-                            allele = 1 ;
+                            allele = ALT_ALLELE;
                         }
                         else {
-                            allele = 0 ;
+                            allele = REF_ALLELE;
                         }
                         // using this quality to identify indel
                         base_q = INDEL;
@@ -1086,10 +1086,10 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                     if( refAlleleLen != 1 && altAlleleLen == 1 && i+1 < aln_core_n_cigar) {
 
                         if ( ref_pos + cigar_oplen - 1 == variantPos && bam_cigar_op(cigar[i+1]) == 2 ) {
-                            allele = 1 ;
+                            allele = ALT_ALLELE;
                         }
                         else {
-                            allele = 0 ;
+                            allele = REF_ALLELE;
                         }
                         // using this quality to identify indel
                         base_q = INDEL;
@@ -1158,10 +1158,10 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                             // get the next match
                             char base = seq_nt16_str[bam_seqi(bam_get_seq(&aln), query_pos)];
                             if( base == (*currentVariantIter).second.Ref[0] ){
-                                allele = 0;
+                                allele = REF_ALLELE;
                             }
                             else if( base == (*currentVariantIter).second.Alt[0] ){
-                                allele = 1;
+                                allele = ALT_ALLELE;
                             }
                             base_q = bam_get_qual(&aln)[query_pos];
                         }
@@ -1173,12 +1173,12 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                                 //std::string refSeq = (*currentVariantIter).second.Ref;
                                 //std::string altSeq = (*currentVariantIter).second.Alt;
 
-                                allele = 1;
+                                allele = ALT_ALLELE;
                                 // using this quality to identify indel
                                 base_q = INDEL;
                             }
                             else if ( allele == -1 ) {
-                                allele = 0;
+                                allele = REF_ALLELE;
                                 // using this quality to identify indel
                                 base_q = INDEL;
                             }
