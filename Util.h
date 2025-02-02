@@ -48,6 +48,7 @@ struct Variant{
     int allele;
     int quality;
     bool underHomopolymer;
+    std::vector<std::pair<int, char>> offsetBase; //offset, base
 };
 
 struct ReadVariant{

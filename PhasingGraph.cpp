@@ -533,6 +533,46 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
     }
     in_readVariant.erase( std::next(in_readVariant.begin(), saveIter), in_readVariant.end());
 
+    //position, allele, VariantBases
+    std::map<int, std::array<VariantBases, 2>> posAlleleCount;
+    for(std::vector<ReadVariant>::iterator readIter = in_readVariant.begin() ; readIter != in_readVariant.end() ; readIter++ ){
+        for( auto variant : (*readIter).variantVec ){
+            posAlleleCount[variant.position][variant.allele].targetCount++;
+            for(auto offsetBaseIter : variant.offsetBase){
+                posAlleleCount[variant.position][variant.allele].offsetDiffRefCount[offsetBaseIter.first]++;
+            }
+        }
+    }
+
+    std::vector<int> delPos;
+    for(const auto& posAlleleCountIter : posAlleleCount) {
+        const auto& alleleIter = posAlleleCountIter.second;
+        const auto& refOffsetMap = alleleIter[REF_ALLELE].offsetDiffRefCount;
+        const auto& altOffsetMap = alleleIter[ALT_ALLELE].offsetDiffRefCount;
+        int targetAltCount = alleleIter[ALT_ALLELE].targetCount;
+
+        int sameCount = 0;
+        for (const auto& altOffsetMapIter : altOffsetMap) {
+            int ra = 0;
+            if (refOffsetMap.count(altOffsetMapIter.first)) {
+                ra = refOffsetMap.at(altOffsetMapIter.first);
+            }
+            int aa = altOffsetMapIter.second;
+            double condition1 = (double)aa / targetAltCount;
+            double condition2 = (double)aa / (ra + aa);
+            
+            if(condition1 >= 0.5 && condition2 >= 0.6){
+                sameCount++;
+                if(sameCount == 2){
+                    break;
+                }
+            }
+        }
+        if(sameCount >= 2){
+            delPos.push_back(posAlleleCountIter.first);
+        }
+    }
+
     int readCount=0;
     // merge alignment
     for(std::vector<ReadVariant>::iterator readIter = in_readVariant.begin() ; readIter != in_readVariant.end() ; readIter++ ){
@@ -555,6 +595,9 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
         // Visiting all the variants on the read
         for( auto variant : (*readIter).variantVec ){
             readCount++;
+            if(std::binary_search(delPos.begin(), delPos.end(), variant.position)){
+                continue;
+            }
             if( variant.quality <= VARIANT_UNDEFINED ){
                 (*variantPosType)[variant.position].type = variant.quality;
             }

@@ -910,7 +910,93 @@ void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool,
     
 }
 
-void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, const std::string &ref_string, bool isONT, double mismatchRate){
+
+bool processCigarOperation(const uint32_t *cigar, int &cigarIndex, int cigarIndexEnd, int direction, int &remainingBases, int &readPos, int &refPos, int &cigarOp){
+    cigarIndex += direction;
+
+    while (cigarIndex < cigarIndexEnd && cigarIndex >= 0){
+        cigarOp = bam_cigar_op(cigar[cigarIndex]);
+        int cigarOpLen = bam_cigar_oplen(cigar[cigarIndex]);
+
+        if (cigarOp == MATCH || cigarOp == SKIP || cigarOp == N || cigarOp == EQ || cigarOp == X){
+            remainingBases += cigarOpLen;
+            return true;
+        }
+        else if (cigarOp == INSERTION){
+            readPos += cigarOpLen * direction;
+        }
+        else if (cigarOp == DELETION){
+            refPos += cigarOpLen * direction;
+        }
+        else if (cigarOp == SOFT_CLIP || cigarOp == HARD_CLIP){
+            return false;
+        }
+        else {
+            return false;
+        }
+        cigarIndex += direction;
+    }
+    return false;
+}
+
+std::vector<std::pair<int, char>> getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int remainingBases, int refPos, int direction, int windowSize = 100){
+    const int cigarIndexEnd = aln.core.n_cigar;
+    const int readLen = aln.core.l_qseq;
+    const int refLen = refString.length();
+    int cigarOp = bam_cigar_op(cigar[cigarIndex]);
+    const uint8_t *seq = bam_get_seq(&aln);
+    std::vector<std::pair<int, char>> offsetBase;
+
+    
+    for (int i = 1; i <= windowSize; i++){
+        remainingBases-- ;
+        // next cigar
+        if (remainingBases == 0 || remainingBases == -1){
+            if(!processCigarOperation(cigar, cigarIndex, cigarIndexEnd, direction, remainingBases, readPos, refPos, cigarOp)){
+                return offsetBase;
+            }
+        }
+        if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N){
+            continue;
+        }
+        readPos += direction;
+        refPos += direction;
+        if (readPos > readLen || refPos > refLen || readPos < 0 || refPos < 0) {
+            return offsetBase;
+        }
+        char read_base = seq_nt16_str[bam_seqi(seq, readPos)];
+        char ref_base = refString[refPos];
+        if (read_base != ref_base){
+            offsetBase.push_back(std::make_pair(i * direction, read_base));
+        }
+    }
+    return offsetBase;
+}
+
+std::vector<std::pair<int, char>> getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int readOffset, int refPos, int windowSize = 100){
+    const int cigarOpLen = bam_cigar_oplen(cigar[cigarIndex]);
+    const int cigarOp = bam_cigar_op(cigar[cigarIndex]);
+    int ForwardRemainingBases = 0;
+    int ReversRemainingBases = 0;
+    readPos += readOffset;
+    if(cigarOp != INSERTION){
+        ForwardRemainingBases = cigarOpLen - readOffset > 0 ? cigarOpLen - readOffset : 0;
+        ReversRemainingBases = readOffset > 0 ? readOffset : 0;
+    }
+
+    std::vector<std::pair<int, char>> offsetBase;
+
+    auto appendBases = [&](int direction, int buffer) {
+        auto bases = getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, buffer, refPos, direction, windowSize);
+        offsetBase.insert(offsetBase.end(), bases.begin(), bases.end());
+    };
+
+    appendBases(-1, ReversRemainingBases);
+    appendBases(1, ForwardRemainingBases);
+    return offsetBase;
+}
+
+void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, const std::string &ref_string, bool isONT, double mismatchRate){
 
     ReadVariant *tmpReadResult = new ReadVariant();
     (*tmpReadResult).read_name = bam_get_qname(&aln);
@@ -1101,6 +1187,8 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                     if( allele != -1 ){
                         // record snp result
                         Variant *tmpVariant = new Variant(variantPos, allele, base_q);
+                        std::vector<std::pair<int, char>> offsetBase = getWindowsDiffRef(cigar, i, aln, ref_string, query_pos, offset, variantPos);
+                        (*tmpVariant).offsetBase = offsetBase;
                         (*tmpReadResult).variantVec.push_back( (*tmpVariant) );
                         delete tmpVariant;                        
                     }
