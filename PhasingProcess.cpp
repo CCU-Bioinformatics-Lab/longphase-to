@@ -7,13 +7,15 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     std::cerr<< "LongPhase Ver " << params.version << "\n";
     std::cerr<< "\n";
     std::cerr<< "--- File Parameter --- \n";
-    std::cerr<< "SNP File      : " << params.snpFile      << "\n";
-    std::cerr<< "SV  File      : " << params.svFile       << "\n";
-    std::cerr<< "MOD File      : " << params.modFile      << "\n";
-    std::cerr<< "REF File      : " << params.fastaFile    << "\n";
-    std::cerr<< "Output Prefix : " << params.resultPrefix << "\n";
-    std::cerr<< "Generate Dot  : " << ( params.generateDot ? "True" : "False" ) << "\n";
-    std::cerr<< "BAM File      : ";
+    std::cerr<< "SNP File       : " << params.snpFile       << "\n";
+    std::cerr<< "SV  File       : " << params.svFile        << "\n";
+    std::cerr<< "MOD File       : " << params.modFile       << "\n";
+    std::cerr<< "PON File       : " << params.ponFile       << "\n";
+    std::cerr<< "Strict PON File: " << params.strictPonFile << "\n";
+    std::cerr<< "REF File       : " << params.fastaFile     << "\n";
+    std::cerr<< "Output Prefix  : " << params.resultPrefix  << "\n";
+    std::cerr<< "Generate Dot   : " << ( params.generateDot ? "True" : "False" ) << "\n";
+    std::cerr<< "BAM File       : ";
     for( auto file : params.bamFile){
         std::cerr<< file <<" " ;   
     }
@@ -39,6 +41,12 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     std::time_t begin = time(NULL);
     std::cerr<< "parsing VCF ... ";
     SnpParser snpFile(params);
+    std::cerr<< difftime(time(NULL), begin) << "s\n";
+
+    // load PON vcf and strict PON vcf file
+    begin = time(NULL);
+    std::cerr<< "parsing PON VCF ... ";
+    snpFile.setGermline(params.ponFile, params.strictPonFile);
     std::cerr<< difftime(time(NULL), begin) << "s\n";
 
     // load SV vcf file

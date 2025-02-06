@@ -23,6 +23,12 @@ static const char *CORRECT_USAGE_MESSAGE =
 "   --indels                               phase small indel. default: False\n"
 "   --dot                                  each contig/chromosome will generate dot file. \n\n"
 
+"somatic arguments:\n"
+"   --pon-file=NAME                        input PON VCF file. determines germline variants using position-based matching.\n"
+"                                          input format: A.vcf, B.vcf.\n"
+"   --strict-pon-file=NAME                 input PON VCF file. determines germline variants using both position and ALT allele matching.\n"
+"                                          input format: A.vcf, B.vcf.\n\n"
+
 "parse alignment arguments:\n"
 "   -q, --mappingQuality=Num               filter alignment if mapping quality is lower than threshold. default:1\n"
 "   -x, --mismatchRate=Num                 mark reads as false if mismatchRate of them are higher than threshold. default:3\n\n"
@@ -46,7 +52,7 @@ static const char *CORRECT_USAGE_MESSAGE =
 
 static const char* shortopts = "s:b:o:t:r:d:1:a:q:x:p:e:n:m:L:";
 
-enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION};
+enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE};
 
 static const struct option longopts[] = { 
     { "help",                 no_argument,        NULL, OPT_HELP },
@@ -57,6 +63,8 @@ static const struct option longopts[] = {
     { "indels",               no_argument,        NULL, PHASE_INDEL },   
     { "sv-file",              required_argument,  NULL, SV_FILE },  
     { "mod-file",             required_argument,  NULL, MOD_FILE },
+    { "pon-file",             required_argument,  NULL, PON_FILE },
+    { "strict-pon-file",      required_argument,  NULL, STRICT_PON_FILE },
     { "reference",            required_argument,  NULL, 'r' },
     { "snp-file",             required_argument,  NULL, 's' },
     { "bam-file",             required_argument,  NULL, 'b' },
@@ -82,6 +90,8 @@ namespace opt
     static std::string snpFile="";
     static std::string svFile="";
     static std::string modFile="";
+    static std::string ponFile="";
+    static std::string strictPonFile="";
     static std::vector<std::string> bamFile;
     static std::string fastaFile="";
     static std::string resultPrefix="result";
@@ -142,7 +152,8 @@ void PhasingOptions(int argc, char** argv)
         case DOT_FILE: opt::generateDot=true; break;
         case IS_ONT: opt::isONT=true; break;
         case IS_PB: opt::isPB=true; break;
-        
+        case PON_FILE: arg >> opt::ponFile; break;
+        case STRICT_PON_FILE: arg >> opt::strictPonFile; break;
         case OPT_HELP:
             std::cout << CORRECT_USAGE_MESSAGE;
             exit(EXIT_SUCCESS);
@@ -289,6 +300,25 @@ void PhasingOptions(int argc, char** argv)
         die = true;
     }
     
+    // if (!opt::ponFile.empty())
+    // {
+    //     std::ifstream openFile(opt::ponFile.c_str());
+    //     if (!openFile.is_open())
+    //     {
+    //         std::cerr << "File " << opt::ponFile << " not exist.\n\n";
+    //         die = true;
+    //     }
+    // }
+
+    // if (!opt::strictPonFile.empty())
+    // {
+    //     std::ifstream openFile(opt::strictPonFile.c_str());
+    //     if (!openFile.is_open())
+    //     {
+    //         std::cerr << "File " << opt::strictPonFile << " not exist.\n\n";
+    //         die = true;
+    //     }
+    // }
     
     if (die)
     {
@@ -330,6 +360,9 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     
     ecParams.snpConfidence=opt::snpConfidence;
     ecParams.readConfidence=opt::readConfidence;
+    
+    ecParams.ponFile=opt::ponFile;
+    ecParams.strictPonFile=opt::strictPonFile;
     
     ecParams.version=in_version;
     ecParams.command=opt::command;

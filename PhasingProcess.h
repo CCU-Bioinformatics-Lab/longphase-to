@@ -12,6 +12,8 @@ struct PhasingParameters
     std::string svFile;
     std::vector<std::string> bamFile;
     std::string modFile="";
+    std::string ponFile="";
+    std::string strictPonFile="";
     std::string fastaFile;
     std::string resultPrefix;
     bool generateDot;

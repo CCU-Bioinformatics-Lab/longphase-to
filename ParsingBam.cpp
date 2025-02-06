@@ -219,8 +219,7 @@ void BaseVairantParser::unCompressParser(std::string &variantFile){
     }
     else{
         std::string input;
-        while(! originVcf.eof() ){
-            std::getline(originVcf, input);
+        while(std::getline(originVcf, input)){
             parserProcess(input);
         }
     }
@@ -403,6 +402,7 @@ SnpParser::SnpParser(PhasingParameters &in_params){
     chrVariant = new std::map<std::string, std::map<int, RefAlt> >;
     
     params = &in_params;
+    parserIndel = params->phaseIndel;
     // open vcf file
     htsFile * inf = bcf_open(params->snpFile.c_str(), "r");
     // read header
@@ -431,7 +431,7 @@ SnpParser::SnpParser(PhasingParameters &in_params){
 
     while (bcf_read(inf, hdr, rec) == 0) {
         // snp or indel
-        if (bcf_is_snp(rec) || params->phaseIndel) {
+        if (bcf_is_snp(rec) || parserIndel) {
             VariantGenotype parserType = confirmRequiredGT(hdr, rec, "GT", rec->pos);
             if ( parserType != GENOTYPE_UNDEFINED ) {
                 // get chromosome string
@@ -442,8 +442,50 @@ SnpParser::SnpParser(PhasingParameters &in_params){
     }
 }
 
+SnpParser::SnpParser(const std::string &ponFile, const std::string &strictPonFile, bool parserIndel) 
+    : chrVariant(new std::map<std::string, std::map<int, RefAlt>>()), parserIndel(parserIndel) {
+    auto ponFiles = splitString(ponFile);
+    auto strictPonFiles = splitString(strictPonFile);
+    auto processFile = [this](std::string &file) {
+        if (file.find(".gz") != std::string::npos) {
+            this->compressParser(file);
+        } else if (file.find(".vcf") != std::string::npos) {
+            this->unCompressParser(file);
+        }
+    };
+    parserAllele = false;
+    for (auto &file : ponFiles) {
+        processFile(file);
+    }
+    parserAllele = true;
+    for (auto &file : strictPonFiles) {
+        processFile(file);
+    }
+}
+
 SnpParser::~SnpParser(){
     delete chrVariant;
+}
+
+void SnpParser::setGermline(const std::string &ponFile, const std::string &strictPonFile){
+    useGermlineParser = true;
+    auto ponFiles = splitString(ponFile);
+    auto strictPonFiles = splitString(strictPonFile);
+    auto processFile = [this](std::string &file) {
+        if (file.find(".gz") != std::string::npos) {
+            this->compressParser(file);
+        } else if (file.find(".vcf") != std::string::npos) {
+            this->unCompressParser(file);
+        }
+    };
+    parserAllele = false;
+    for (auto &file : ponFiles) {
+        processFile(file);
+    }
+    parserAllele = true;
+    for (auto &file : strictPonFiles) {
+        processFile(file);
+    }
 }
 
 std::map<int, RefAlt>* SnpParser::getVariants(std::string chrName){
@@ -529,6 +571,131 @@ void SnpParser::writeResult(ChrPhasingResult &chrPhasingResult){
 }
 
 void SnpParser::parserProcess(std::string &input){
+    if (useGermlineParser) {
+        parserProcessGermline(input);
+    } else {
+        parserProcessOriginal(input);
+    }
+}
+
+void SnpParser::parserProcessGermline(std::string &input){
+    const char* ptr = input.c_str();
+    size_t inputSize = input.size();
+
+    // skip lines that are a header, identified by the '##' prefix
+    if (inputSize >= 2 && ptr[0] == '#' && ptr[1] == '#') {
+        return;
+    }
+    // skip header line containing column names: #CHROM POS ID REF ALT
+    if (inputSize >= 1 && ptr[0] == '#') {
+        std::istringstream iss(input);
+        std::vector<std::string> fields((std::istream_iterator<std::string>(iss)),std::istream_iterator<std::string>());
+        validateHeader(fields);
+        return;
+    }
+
+    // declare an array to store fields and split the input line into fields
+    // `std::array` is faster for fixed-size data, while `std::vector` is more flexible for dynamic data.
+    std::array<std::string, 5> fields = splitFieldsToArray(ptr, inputSize);
+    // std::vector<std::string> fields = splitFieldsToVector(ptr, inputSize);
+    std::string chr = fields[CHROM];
+    // vcf 1-based(htslib parser 0-based), bam 0-based, so we need to minus 1
+    int pos = strToInt(fields[POS]) - 1;
+
+    auto& chrIter = (*chrVariant)[chr];
+    auto posIter = chrIter.find(pos);
+    // if the position does not exist or the variant is already marked as germline, skip
+    if (posIter == chrIter.end() || posIter->second.germline) {
+        return;
+    }
+    RefAlt* variant = &posIter->second;
+    // if allele comparison is ignored
+    if (!parserAllele) {
+        variant->germline = true;
+        return;
+    }
+    // chrVariant will not store variants with multiple alleles, 
+    // so there is no handling for multiple alleles here.
+    auto germlineAlts = splitString(fields[ALT]);
+    // if multiple ALT alleles are present, check if any germline allele match the variant allele
+    for (const auto & germlineAlt : germlineAlts) {
+        if (variant->Alt == germlineAlt) {
+            variant->germline = true;
+            return;
+        }
+    }
+}
+
+void SnpParser::parserProcessOriginal(std::string &input){
+    const char* ptr = input.c_str();
+    size_t inputSize = input.size();
+
+    // skip lines that are a header, identified by the '##' prefix
+    if (inputSize >= 2 && ptr[0] == '#' && ptr[1] == '#') {
+        return;
+    }
+    // skip header line containing column names: #CHROM POS ID REF ALT
+    if (inputSize >= 1 && ptr[0] == '#') {
+        std::istringstream iss(input);
+        std::vector<std::string> fields((std::istream_iterator<std::string>(iss)),std::istream_iterator<std::string>());
+        validateHeader(fields);
+        return;
+    }
+
+    // declare an array to store fields and split the input line into fields
+    // `std::array` is faster for fixed-size data, while `std::vector` is more flexible for dynamic data.
+    std::array<std::string, 5> fields = splitFieldsToArray(ptr, inputSize);
+    // std::vector<std::string> fields = splitFieldsToVector(ptr, inputSize);
+    RefAlt variant;
+
+    if (!parserIndel) {
+        size_t refLength = fields[REF].length();
+        auto germlineAlts = splitString(fields[ALT]);
+        for (const auto &germlineAlt : germlineAlts) {
+            if (germlineAlt.length() == refLength) {
+                if (!variant.Alt.empty()) {
+                    variant.Alt.push_back(',');
+                }
+                variant.Alt.append(germlineAlt);
+            }
+        }
+        if (variant.Alt.empty()) {
+            return;
+        }
+    }
+    else {
+        variant.Alt = fields[ALT];
+    }
+    // if allele comparison is ignored
+    if (!parserAllele) {
+        variant.Alt = ".";
+    }
+
+    std::string chr = fields[CHROM];
+    // vcf 1-based(htslib parser 0-based), bam 0-based, so we need to minus 1
+    int pos = strToInt(fields[POS]) - 1;
+    variant.Ref = fields[REF];
+
+    auto& chrIter = (*chrVariant)[chr];
+    auto posIter = chrIter.find(pos);
+    if (posIter == chrIter.end()) {
+        chrIter.insert({pos, variant});
+    } else {
+        if(posIter->second.Alt == variant.Alt || posIter->second.Alt == "."){
+            return;
+        }
+        if (variant.Alt == ".") {
+            posIter->second.Alt = ".";
+            return;
+        }
+        auto existingAlts = splitString(posIter->second.Alt);
+        auto newAlts = splitString(variant.Alt);
+        for (const auto &alt : newAlts) {
+            if (std::find(existingAlts.begin(), existingAlts.end(), alt) == existingAlts.end()) {
+                posIter->second.Alt += "," + alt;
+            }
+        }
+    }
 }
 
 void SnpParser::fetchAndValidateTag(const int checkTag, const char *tag, hts_pos_t pos){
@@ -579,15 +746,98 @@ void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, std::map<std::strin
     (*chrVariant)[chr][variantPos] = tmp;
 }
 
+std::vector<std::string> SnpParser::splitString(const std::string &input) {
+    std::vector<std::string> result;
+    const char* str = input.data();
+    const char* end = str + input.size();
+    if (std::find(str, end, ',') == end) {
+        result.push_back(std::string(str, end - str));
+        return result;
+    }
+
+    while (str < end) {
+        const char* comma = std::find(str, end, ',');
+        size_t len = comma - str;
+        result.push_back(std::string(str, len));
+        if (comma == end) {
+            break;
+        }
+        str = comma + 1;
+    }
+    return result;
+}
+
+void SnpParser::validateHeader(const std::vector<std::string>& fields) {
+    if (fields.size() < columnCount) {
+        std::cerr << "header columns mismatch: #CHROM\tPOS\tID\tREF\tALT" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    std::string formatColumnsCheck;
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (fields[i] == "CHROM" && CHROM != i) formatColumnsCheck += fields[i] + " ";
+        else if (fields[i] == "POS" && POS != i) formatColumnsCheck += fields[i] + " ";
+        else if (fields[i] == "REF" && REF != i) formatColumnsCheck += fields[i] + " ";
+        else if (fields[i] == "ALT" && ALT != i) formatColumnsCheck += fields[i] + " ";
+    }
+    if (!formatColumnsCheck.empty()){
+        std::cerr << "vcf format columns mismatch: " << formatColumnsCheck << std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
+
+std::array<std::string, 5> SnpParser::splitFieldsToArray(const char* ptr, size_t inputSize) {
+    std::array<std::string, 5> fields;
+    size_t index = 0;
+    const char* start = ptr;
+    const char* end = ptr + inputSize;
+    while (start < end && index < columnCount) {
+        const char* tab = std::find(start, end, '\t');
+        if (tab == end) {
+            fields[index++] = std::string(start, end - start);
+            break;
+        } else {
+            fields[index++] = std::string(start, tab - start);
+            start = tab + 1;
+        }
+    }
+    return fields;
+}
+
+std::vector<std::string> SnpParser::splitFieldsToVector(const char* ptr, size_t inputSize) {
+    std::vector<std::string> fields;
+    size_t index = 0;
+    const char* start = ptr;
+    const char* end = ptr + inputSize;
+    while (start < end && index < columnCount) {
+        const char* tab = std::find(start, end, '\t');
+        if (tab == end) {
+            fields.push_back(std::string(start, end - start));
+            break;
+        } else {
+            fields.push_back(std::string(start, tab - start));
+            start = tab + 1;
+        }
+    }
+    return fields;
+}
+
+int SnpParser::strToInt(const std::string &s) {
+    int result = 0;
+    for (const char c : s) {
+        result = result * 10 + (c - '0');
+    }
+    return result;
+}
+
 bool SnpParser::findSNP(std::string chr, int position){
     std::map<std::string, std::map<int, RefAlt> >::iterator chrIter = chrVariant->find(chr);
     // empty chromosome
     if( chrIter == chrVariant->end() )
         return false;
     
-    std::map<int, RefAlt>::iterator posIter = (*chrVariant)[chr].find(position);
+    std::map<int, RefAlt>::iterator posIter = chrIter->second.find(position);
     // empty position
-    if( posIter == (*chrVariant)[chr].end() )
+    if( posIter == chrIter->second.end() )
         return false;
         
     return true;
@@ -812,9 +1062,9 @@ bool SVParser::findSV(std::string chr, int position){
     if( chrIter == chrVariant->end() )
         return false;
     
-    std::map<int, std::map<std::string ,bool>>::iterator posIter = (*chrVariant)[chr].find(position);
+    std::map<int, std::map<std::string ,bool>>::iterator posIter = chrIter->second.find(position);
     // empty position
-    if( posIter == (*chrVariant)[chr].end() )
+    if( posIter == chrIter->second.end() )
         return false;
         
     return true;
