@@ -143,9 +143,26 @@ VariantEdge::VariantEdge(int inCurrPos){
     currPos = inCurrPos;
     alt = new SubEdge();
     ref = new SubEdge();
+    edgeCount = new std::map<int, std::map<int, ThreePointEdge>>;
     refcnt = 0; 
     altcnt = 0; 
     coverage = 0;  
+}
+
+void VariantEdge::addSegmentEdge(Variant &currentNode, Variant &connectNode, Variant &connectSecondNode){
+    int alleleCombination = (currentNode.allele << 2) | (connectNode.allele << 1) | connectSecondNode.allele;
+    (*edgeCount)[connectNode.position][connectSecondNode.position][alleleCombination]++;
+}
+
+ThreePointEdge VariantEdge::findThreePointEdge(int pos, int nextPos){
+    auto iter = edgeCount->find(pos);
+    if(iter != edgeCount->end()){
+        auto innerIter = iter->second.find(nextPos);
+        if(innerIter != iter->second.end()){
+            return innerIter->second;
+        }
+    }
+    return ThreePointEdge();
 }
 
 //to get the value of fakeSnp
@@ -232,6 +249,63 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, Varia
     return std::make_pair( refEdge, altEdge );
 }
 
+int VairiantGraph::patternMining(ThreePointEdge threePointEdge){
+    constexpr float condition = 3;
+    SomaticVote vote = VOTE_UNDEFINED;
+
+    float largest = -1;
+    float secondLargest = -1;
+    float thirdLargest = -1;
+
+    for (float value : threePointEdge) {
+        if (value > largest) {
+            thirdLargest = secondLargest;
+            secondLargest = largest;
+            largest = value;
+        } else if (value > secondLargest) {
+            thirdLargest = secondLargest;
+            secondLargest = value;
+        } else if (value > thirdLargest) {
+            thirdLargest = value;
+        }
+    }
+
+    if (secondLargest == 0.0f) {
+        return VOTE_UNDEFINED;
+    }
+    // find the vote of the third path
+    if (thirdLargest > 0.0f) {
+        for (auto &pattern : highSomaticPatterns) {
+            const auto &edge = pattern.edges;
+            if (threePointEdge[edge[0]] >= thirdLargest &&
+                threePointEdge[edge[1]] >= thirdLargest &&
+                threePointEdge[edge[0]] >= condition &&
+                threePointEdge[edge[1]] >= condition &&
+                threePointEdge[edge[2]] >= thirdLargest) {
+                vote = pattern.vote;
+                break;
+            }
+        }
+    }
+    // find the vote of the second path
+    if(vote == VOTE_UNDEFINED && secondLargest/2 > thirdLargest){
+        for(auto &pattern : lowSomaticPatterns){
+            const auto &edge = pattern.edges;
+            if (threePointEdge[edge[1]] >= secondLargest && 
+                threePointEdge[edge[2]] >= secondLargest) {
+                vote = pattern.vote;
+                break;
+            }
+        }
+    }
+    // else if the vote is still undefined, we think the third path is disagree
+    if(vote == VOTE_UNDEFINED && secondLargest >= condition){
+        vote = DISAGREE;
+    }
+
+    return vote;
+}
+
 std::pair<float,float> VariantEdge::findNumberOfRead(int targetPos){
     std::pair<float,float> refBestPair  = ref->BestPair(targetPos);
     std::pair<float,float> altBestPair  = alt->BestPair(targetPos);
@@ -300,6 +374,7 @@ void VairiantGraph::edgeConnectResult(){
     int currPos = -1;
     int nextPos = -1;
     int lastConnectPos = -1;
+    auto prevIter = variantPosType->end();
 
     // Visit all position and assign SNPs to haplotype.
     // Avoid recording duplicate information,
@@ -326,6 +401,35 @@ void VairiantGraph::edgeConnectResult(){
         float h1 = (*hpCountMap2)[currPos][HAPLOTYPE1] ;
         float h2 = (*hpCountMap2)[currPos][HAPLOTYPE2] ;
 
+        if(variantIter->second.origin == SOMATIC){
+            if(h1 == h2 && h1 != 0){
+                // maybe the variant is not somatic
+                // std::cout << chr << "\t" << currPos << "\t" << h1 << "\t" << h2 << "\n";
+            }else if(h1 != h2){
+                Haplotype tmpHP = (h1 > h2 ? HAPLOTYPE1 : HAPLOTYPE2);
+                PhasingResult phasingResult(tmpHP, blockStart, variantIter->second.type, true);
+                posPhasingResult->emplace(currPos, phasingResult);
+            }else{
+                auto sourceHaplotype = variantIter->second.sourceHaplotype;
+                Haplotype tmpHP;
+                if(sourceHaplotype != Allele_UNDEFINED){
+                    if(currPos >= lastConnectPos){
+                        blockStart = currPos;
+                        lastConnectPos = nextPos;
+                    }
+                    tmpHP = sourceHaplotype == REF_ALLELE ? HAPLOTYPE1 : HAPLOTYPE2;
+                }else{
+                    if(currPos >= lastConnectPos){
+                        blockStart = currPos;
+                    }
+                    tmpHP = HAPLOTYPE_UNDEFINED;
+                }
+                PhasingResult phasingResult(tmpHP, blockStart, variantIter->second.type, true);
+                posPhasingResult->emplace(currPos, phasingResult);
+            }
+            continue;
+        }
+
         //Handle the special case which One Long Read provides wrong info repeatedly
         std::pair<float, float> special = Onelongcase( (*hpCountMap3)[currPos] ) ;
         if ( special.first != -1 ) {
@@ -343,8 +447,9 @@ void VairiantGraph::edgeConnectResult(){
             if(!posPhasingResult->empty() && posPhasingResult->rbegin()->first == blockStart){
                 posPhasingResult->erase(blockStart);
             }
-
-            blockStart = currPos;
+            if(prevIter != variantPosType->end() && prevIter->second.origin != SOMATIC){
+                blockStart = currPos;
+            }
             PhasingResult phasingResult(HAPLOTYPE1, blockStart, variantIter->second.type);
             posPhasingResult->emplace(currPos, phasingResult);
         }
@@ -359,9 +464,23 @@ void VairiantGraph::edgeConnectResult(){
         if( edgeIter==edgeList->end() ){
             continue;
         }
-
+        const auto& assignHaplotype = variantIter->second.assignHaplotype;
         // check connect between surrent SNP and next n SNPs
         for(int i = 0 ; i < params->connectAdjacent ; i++ ){
+            if (nextNodeIter->second.origin == SOMATIC){
+                auto acceptHaplotype = assignHaplotype.find(nextNodeIter->first);
+                if (acceptHaplotype != assignHaplotype.end()){
+                    int acceptHaplotypeValue = (acceptHaplotype->second == REF_ALLELE)
+                        ? (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1
+                        : (*posPhasingResult)[currPos].refHaplotype;
+                    (*hpCountMap2)[nextNodeIter->first][acceptHaplotypeValue] += 1;
+                }
+                nextNodeIter++;
+                if( nextNodeIter == variantPosType->end() ){
+                    break;
+                }
+                continue;
+            }
             VoteResult vote(currPos, 1); //used to store previous 20 variants' voting information
 
             // consider reads from the currnt SNP and the next (i+1)'s SNP
@@ -418,6 +537,7 @@ void VairiantGraph::edgeConnectResult(){
                 break;
             }
         }
+        prevIter = variantIter;
     }
 
     // delete hpCountMap;
@@ -425,9 +545,10 @@ void VairiantGraph::edgeConnectResult(){
     delete hpCountMap3;
 }
 
-VairiantGraph::VairiantGraph(std::string &in_ref, PhasingParameters &in_params){
+VairiantGraph::VairiantGraph(std::string &in_ref, PhasingParameters &in_params, std::string &in_chr){
     params=&in_params;
     ref=&in_ref;
+    chr = in_chr;
     
     variantPosType = new std::map<int,VariantInfo>;
     edgeList = new std::map<int,VariantEdge*>;
@@ -444,8 +565,10 @@ void VairiantGraph::destroy(){
     for( auto edgeIter = edgeList->begin() ; edgeIter != edgeList->end() ; edgeIter++ ){
         edgeIter->second->ref->destroy();
         edgeIter->second->alt->destroy();
+        edgeIter->second->edgeCount->clear();
         delete edgeIter->second->ref;
         delete edgeIter->second->alt;
+        delete edgeIter->second->edgeCount;
     }
     
     delete variantPosType;
@@ -572,6 +695,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
         // iter all pair of snp and construct initial graph
         std::vector<Variant>::iterator variant1Iter = readIter->second.variantVec.begin();
         std::vector<Variant>::iterator variant2Iter = std::next(variant1Iter,1);
+        std::vector<Variant>::iterator variant3Iter = std::next(variant2Iter,1);
         
         while(variant1Iter != readIter->second.variantVec.end() && variant2Iter != readIter->second.variantVec.end() ){
             // create new edge if not exist
@@ -591,6 +715,13 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
 
             // add edge process
             for(int nextNode = 0 ; nextNode < params->connectAdjacent; nextNode++){
+                for(int nextNextNode = 0 ; nextNextNode < params->somaticConnectAdjacent && nextNode < params->somaticConnectAdjacent; nextNextNode++){
+                    if( variant3Iter == readIter->second.variantVec.end() ){
+                        break;
+                    }
+                    node->addSegmentEdge((*variant1Iter), (*variant2Iter), (*variant3Iter));
+                    variant3Iter++;
+                }
                 // this allele support ref
                 if( variant1Iter->allele == 0 )
                     node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
@@ -600,6 +731,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
                 
                 // next snp
                 variant2Iter++;
+                variant3Iter = std::next(variant2Iter,1);
                 if( variant2Iter == readIter->second.variantVec.end() ){
                     break;
                 }
@@ -607,6 +739,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
 
             variant1Iter++;
             variant2Iter = std::next(variant1Iter,1);
+            variant3Iter = std::next(variant2Iter,1);
         }
 
         //count the ref and alt base amount of the last variant on the read
@@ -624,7 +757,102 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
             (*edgeList)[(*variant1Iter).position]->coverage++;
         }
     }
-} 
+}
+
+void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
+    std::string logFilePath = params->resultPrefix + chr + ".somatic";
+    std::ofstream logFile(logFilePath, std::ofstream::out | std::ofstream::trunc);
+    if (!logFile.is_open()) {
+        std::cerr << "failed to open log file: " << logFilePath << std::endl;
+    }
+    std::map<int, std::array<int, 12> > voteResult;
+    std::map<int, VariantInfo>::iterator nodeIter;
+    std::map<int, VariantInfo>::iterator nextNodeIter;
+    std::map<int, VariantInfo>::iterator nextNextNodeIter;
+
+    for(nodeIter = variantPosType->begin() ; nodeIter != variantPosType->end() ; nodeIter++ ){
+        // check next position
+        nextNodeIter = std::next(nodeIter, 1);
+        if( nextNodeIter == variantPosType->end() ){
+            break;
+        }
+
+        // There should not be a large distance between any two variants, 
+        // with the default being a distance of 300000bp, equivalent to one centromere length.
+        if(std::abs(nextNodeIter->first - nodeIter->first) > params->distance ){
+            continue;
+        }
+
+        // Check if there is no edge from current node
+        std::map<int,VariantEdge*>::iterator edgeIter = edgeList->find(nodeIter->first);
+        if( edgeIter == edgeList->end() ){
+            continue;
+        }
+        VariantEdge *edge = edgeIter->second;
+
+        // check connect between surrent SNP and next n SNPs
+        for(int i = 0 ; i < params->somaticConnectAdjacent ; i++){
+            if( nextNodeIter == variantPosType->end() ){
+                break;
+            }
+
+            nextNextNodeIter = std::next(nextNodeIter, 1);
+            for(int j = 0 ; j < params->somaticConnectAdjacent; j++){
+                if( nextNextNodeIter == variantPosType->end() ){
+                    break;
+                }
+
+                ThreePointEdge threePointEdge = edge->findThreePointEdge(nextNodeIter->first,nextNextNodeIter->first);
+                int voteTmp = patternMining(threePointEdge);
+                
+                if (voteTmp == LEFT_HIGH_SR || voteTmp == LEFT_HIGH_SA || voteTmp == LEFT_LOW){
+                    voteResult[nodeIter->first][voteTmp]++;
+                } else if (voteTmp == RIGHT_HIGH_SR){
+                    voteResult[nextNextNodeIter->first][voteTmp]++;
+                    nextNodeIter->second.assignHaplotype[nextNextNodeIter->first] = REF_ALLELE;
+                } else if (voteTmp == RIGHT_HIGH_SA){
+                    voteResult[nextNextNodeIter->first][voteTmp]++;
+                    nextNodeIter->second.assignHaplotype[nextNextNodeIter->first] = ALT_ALLELE;
+                } else if (voteTmp == RIGHT_LOW){
+                    voteResult[nextNextNodeIter->first][voteTmp]++;
+                } else if (voteTmp == MID_HIGH_SR){
+                    voteResult[nextNodeIter->first][voteTmp]++;
+                    nodeIter->second.assignHaplotype[nextNodeIter->first] = REF_ALLELE;
+                } else if (voteTmp == MID_HIGH_SA){
+                    voteResult[nextNodeIter->first][voteTmp]++;
+                    nodeIter->second.assignHaplotype[nextNodeIter->first] = ALT_ALLELE;
+                } else if (voteTmp == MID_LOW || voteTmp == DISAGREE){
+                    voteResult[nextNodeIter->first][voteTmp]++;
+                }
+                nextNextNodeIter++;
+            }
+            nextNodeIter++;
+        }
+        auto voteResultIter = voteResult.find(nodeIter->first);
+        auto variantIter = variants->find(nodeIter->first);
+        if(voteResultIter != voteResult.end() && variantIter->second.germline == false){
+            const auto& voteResultArray = voteResultIter->second;
+            int highLeftVote = voteResultArray[LEFT_HIGH_SR] + voteResultArray[LEFT_HIGH_SA];
+            int highRightVote = voteResultArray[RIGHT_HIGH_SR] + voteResultArray[RIGHT_HIGH_SA];
+            int highMidVote = voteResultArray[MID_HIGH_SR] + voteResultArray[MID_HIGH_SA];
+            int highAllVote = highLeftVote + highRightVote + highMidVote;
+            int lowVote = voteResultArray[MID_LOW]+voteResultArray[LEFT_LOW]+voteResultArray[RIGHT_LOW];
+            float allLowVote = voteResultArray[DISAGREE] + lowVote;
+            
+            if (highAllVote > 0 || (lowVote > 0 && lowVote / allLowVote >= 0.2)) {
+                logFile<< chr << "\t" << nodeIter->first << "\n";
+                nodeIter->second.origin = SOMATIC;
+                if(highAllVote == highLeftVote){
+                    if(voteResultArray[LEFT_HIGH_SR] > voteResultArray[LEFT_HIGH_SA]){
+                        nodeIter->second.sourceHaplotype = REF_ALLELE;
+                    }else{
+                        nodeIter->second.sourceHaplotype = ALT_ALLELE;
+                    }
+                }
+            }
+        }
+    }
+}
 
 void VairiantGraph::readCorrection(){
     
@@ -653,7 +881,7 @@ void VairiantGraph::readCorrection(){
         // loop all variant 
         for( auto variant : (*readIter).variantVec ){
             const auto& posPhasingResultIter = posPhasingResult->find(variant.position);
-            if( posPhasingResultIter != posPhasingResult->end() ){
+            if( posPhasingResultIter != posPhasingResult->end() && posPhasingResultIter->second.refHaplotype != HAPLOTYPE_UNDEFINED ){
                 const Haplotype refHaplotype = posPhasingResultIter->second.refHaplotype;
                 std::map<int,VariantEdge*>::iterator edgeIter = edgeList->find( variant.position );
                 //when vaf is 0 or 1, the fakeSnp will be true
@@ -667,8 +895,11 @@ void VairiantGraph::readCorrection(){
                 }else if (variant.quality == MOD_FORWARD_STRAND || variant.quality == MOD_REVERSE_STRAND) {
                     continue;
                 }
-                if(variantHaplotype[refHaplotype][variant.allele] == HAPLOTYPE1)haplotype1Count += edgeWeight;
-                else haplotype2Count += edgeWeight;
+                // If variant is not somatic or is somatic with ALT allele, add edgeWeight to the corresponding haplotype count
+                if (!posPhasingResultIter->second.somatic || variant.allele == ALT_ALLELE) {
+                    double &hapCount = (variantHaplotype[refHaplotype][variant.allele] == HAPLOTYPE1) ? haplotype1Count : haplotype2Count;
+                    hapCount += edgeWeight;
+                }
             }
             
         }
@@ -725,7 +956,7 @@ void VairiantGraph::readCorrection(){
     for(auto variantIter = variantPosType->begin() ; variantIter != variantPosType->end() ; variantIter++ ){
         int position = variantIter->first;
         auto posPhasingResultIter = posPhasingResult->find(position);
-        if (posPhasingResultIter == posPhasingResult->end()) {
+        if (posPhasingResultIter == posPhasingResult->end() || posPhasingResultIter->second.refHaplotype == HAPLOTYPE_UNDEFINED) {
             continue;
         }
         
@@ -766,11 +997,26 @@ void VairiantGraph::readCorrection(){
 void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult) {
     for (auto &posPhasingResultIter : posPhasingResult) {
         auto &result = posPhasingResultIter.second;
-        if(result.refHaplotype == HAPLOTYPE1){
-            result.genotype = {"0|1"};
-        }
-        else if(result.refHaplotype == HAPLOTYPE2){
-            result.genotype = {"1|0"};
+        if (result.somatic) {
+            if(result.refHaplotype == HAPLOTYPE_UNDEFINED){
+                result.genotype = {"0/0", "1/1"};
+                result.phaseSet.push_back(-1);
+            }
+            else if(result.refHaplotype == HAPLOTYPE1){
+                result.genotype = {"0|0", ".|1"};
+                result.phaseSet.push_back(-1);
+            }
+            else if(result.refHaplotype == HAPLOTYPE2){
+                result.genotype = {"0|0", "1|."};
+                result.phaseSet.push_back(-1);
+            }
+        } else {
+            if(result.refHaplotype == HAPLOTYPE1){
+                result.genotype = {"0|1"};
+            }
+            else if(result.refHaplotype == HAPLOTYPE2){
+                result.genotype = {"1|0"};
+            }
         }
     }
 }

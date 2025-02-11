@@ -28,6 +28,7 @@ static const char *CORRECT_USAGE_MESSAGE =
 "                                          input format: A.vcf, B.vcf.\n"
 "   --strict-pon-file=NAME                 input PON VCF file. determines germline variants using both position and ALT allele matching.\n"
 "                                          input format: A.vcf, B.vcf.\n\n"
+"   --somaticConnectAdjacent=Num           connect adjacent N SNPs. default:6\n"
 
 "parse alignment arguments:\n"
 "   -q, --mappingQuality=Num               filter alignment if mapping quality is lower than threshold. default:1\n"
@@ -52,7 +53,7 @@ static const char *CORRECT_USAGE_MESSAGE =
 
 static const char* shortopts = "s:b:o:t:r:d:1:a:q:x:p:e:n:m:L:";
 
-enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE};
+enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT};
 
 static const struct option longopts[] = { 
     { "help",                 no_argument,        NULL, OPT_HELP },
@@ -65,6 +66,7 @@ static const struct option longopts[] = {
     { "mod-file",             required_argument,  NULL, MOD_FILE },
     { "pon-file",             required_argument,  NULL, PON_FILE },
     { "strict-pon-file",      required_argument,  NULL, STRICT_PON_FILE },
+    { "somaticConnectAdjacent", required_argument,  NULL, SOMATIC_CONNECT_ADJACENT },
     { "reference",            required_argument,  NULL, 'r' },
     { "snp-file",             required_argument,  NULL, 's' },
     { "bam-file",             required_argument,  NULL, 'b' },
@@ -115,6 +117,8 @@ namespace opt
     static double overlapThreshold = 0.2;
 
     static std::string command;
+
+    static int somaticConnectAdjacent = 6;
 }
 
 void PhasingOptions(int argc, char** argv)
@@ -154,6 +158,7 @@ void PhasingOptions(int argc, char** argv)
         case IS_PB: opt::isPB=true; break;
         case PON_FILE: arg >> opt::ponFile; break;
         case STRICT_PON_FILE: arg >> opt::strictPonFile; break;
+        case SOMATIC_CONNECT_ADJACENT: arg >> opt::somaticConnectAdjacent; break;
         case OPT_HELP:
             std::cout << CORRECT_USAGE_MESSAGE;
             exit(EXIT_SUCCESS);
@@ -363,6 +368,8 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     
     ecParams.ponFile=opt::ponFile;
     ecParams.strictPonFile=opt::strictPonFile;
+    
+    ecParams.somaticConnectAdjacent=opt::somaticConnectAdjacent;
     
     ecParams.version=in_version;
     ecParams.command=opt::command;

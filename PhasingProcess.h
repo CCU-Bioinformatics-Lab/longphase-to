@@ -34,6 +34,8 @@ struct PhasingParameters
     double edgeThreshold;
     double overlapThreshold;
     
+    int somaticConnectAdjacent;
+    
     std::string version;
     std::string command;
 };

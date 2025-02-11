@@ -42,15 +42,20 @@ enum VariantGenotype {
     GENOTYPE_UNDEFINED = -1, // undefined genotype
 };
 
-constexpr size_t PHASING_RESULT_SIZE = 1;
+constexpr size_t PHASING_RESULT_SIZE = 2;
 struct PhasingResult {
     Haplotype refHaplotype = HAPLOTYPE_UNDEFINED;
     std::vector<int> phaseSet;
     VariantType type = VARIANT_UNDEFINED;
+    bool somatic = false;
     std::vector<std::string> genotype;
     PhasingResult() = default;
     PhasingResult(Haplotype inRefHaplotype, int inPhaseSet, VariantType inType)
         : refHaplotype(inRefHaplotype), type(inType){
+            phaseSet.push_back(inPhaseSet);
+    }
+    PhasingResult(Haplotype inRefHaplotype, int inPhaseSet, VariantType inType, bool inSomatic)
+        : refHaplotype(inRefHaplotype), type(inType), somatic(inSomatic) {
             phaseSet.push_back(inPhaseSet);
     }
 };

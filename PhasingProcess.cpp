@@ -27,6 +27,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     std::cerr<< "Phase Indel        : " << ( params.phaseIndel ? "True" : "False" )  << "\n";
     std::cerr<< "Distance Threshold : " << params.distance        << "\n";
     std::cerr<< "Connect Adjacent   : " << params.connectAdjacent << "\n";
+    std::cerr<< "Somatic Connect Adjacent   : " << params.somaticConnectAdjacent << "\n";
     std::cerr<< "Edge Threshold     : " << params.edgeThreshold   << "\n";
     std::cerr<< "Overlap Threshold  : " << params.overlapThreshold   << "\n";
     std::cerr<< "Mapping Quality    : " << params.mappingQuality  << "\n";
@@ -127,9 +128,11 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         }
         
         // create a graph object and prepare to phasing.
-        VairiantGraph *vGraph = new VairiantGraph(chr_reference, params);
+        VairiantGraph *vGraph = new VairiantGraph(chr_reference, params, (*chrIter));
         // trans read-snp info to edge info
         vGraph->addEdge(readVariantVec);
+        // run somatic calling algorithm
+        vGraph->somaticCalling(snpFile.getVariants((*chrIter)));
         // run main algorithm
         vGraph->phasingProcess(chrPhasingResult[*chrIter]);
         // export phasing result
