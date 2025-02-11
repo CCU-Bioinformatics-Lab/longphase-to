@@ -132,6 +132,8 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         vGraph->addEdge(readVariantVec);
         // run main algorithm
         vGraph->phasingProcess(chrPhasingResult[*chrIter]);
+        // export phasing result
+        vGraph->exportPhasingResult(chrPhasingResult[*chrIter]);
         // generate dot file
         if(params.generateDot){
             vGraph->writingDotFile((*chrIter));

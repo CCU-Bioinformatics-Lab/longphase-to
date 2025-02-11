@@ -13,23 +13,6 @@
 
 #include <zlib.h>
 
-enum VariantType {
-    // A VariantType value > 0 represents the quality of the read variant base and indicates that its type is SNP = -2.
-    VARIANT_UNDEFINED = -1, // Undefined variant type
-    SNP = -2, // Single Nucleotide Polymorphism
-    INDEL = -3, // Insertion/Deletion
-    SV = -4, // Structure Variation
-    MOD_FORWARD_STRAND = -5, // Forward Strand Modification
-    MOD_REVERSE_STRAND = -6, // Reverse Strand Modification
-    DANGER_INDEL = -7, // Danger Insertion/Deletion
-};
-
-enum VariantGenotype {
-    HOM = 1, // homozygous
-    HET = 0, // heterozygous
-    GENOTYPE_UNDEFINED = -1, // undefined genotype
-};
-
 struct RefAlt{
     std::string Ref;
     std::string Alt;
@@ -101,7 +84,7 @@ using FormatDefs = std::vector<FormatInfo>;
 class BaseVairantParser{
 
     protected:
-        virtual bool checkType(const int type) const = 0;
+        virtual bool checkType(const VariantType type) const = 0;
         FormatDefs formatDefs = {
             {"GT", "1", "String", "Genotype", false},
             {"PS", "1", "Integer", "Phase set identifier", false},
@@ -179,7 +162,7 @@ class SnpParser : public BaseVairantParser{
         
         void filterSNP(std::string chr, std::vector<ReadVariant> &readVariantVec, std::string &chr_reference);
 
-        bool checkType(const int type) const override;
+        bool checkType(const VariantType type) const override;
 };
 
 class SVParser : public BaseVairantParser{
@@ -206,7 +189,7 @@ class SVParser : public BaseVairantParser{
 
         bool findSV(std::string chr, int posistion);
 
-        bool checkType(const int type) const override;
+        bool checkType(const VariantType type) const override;
 };
 
 class METHParser : public BaseVairantParser{
@@ -237,7 +220,7 @@ class METHParser : public BaseVairantParser{
 		
 		void writeResult(ChrPhasingResult &chrPhasingResult);
 
-        bool checkType(const int type) const override;
+        bool checkType(const VariantType type) const override;
 };
 
 struct Alignment{

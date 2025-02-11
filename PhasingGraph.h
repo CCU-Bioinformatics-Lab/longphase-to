@@ -58,7 +58,7 @@ struct VoteResult{
 };
 
 struct VariantInfo {
-    int type;
+    VariantType type;
     // bool homozygous; // 0 heterozygous 1 homozygous
     // bool somatic; // 0 germline 1 somatic
 };
@@ -130,6 +130,9 @@ class VairiantGraph{
         void addEdge(std::vector<ReadVariant> &in_readVariant);
         
         void phasingProcess(PosPhasingResult &posPhasingResult);
+
+        void exportPhasingResult(PosPhasingResult &posPhasingResult);
+        
         void writingDotFile(std::string dotPrefix);
         std::map<std::string,int>* getReadHP();
         int totalNode();

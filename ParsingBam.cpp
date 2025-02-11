@@ -128,7 +128,7 @@ void FormatSample::eraseFormatSample(const std::string &flag) {
 }
 
 void FormatSample::addFlagAndValue(const std::string &flagBase, const int inValue, const std::string &flagAdd) {
-    std::string value = inValue != -1 ? std::to_string(inValue) : ".";
+    std::string value = inValue > 0 ? std::to_string(inValue + 1) : ".";
     addValues(flagBase + flagAdd, value);
 }
 
@@ -137,13 +137,14 @@ void FormatSample::setGTFlagAndValue(const std::string &flagBase, const std::str
     auto flagStart = fields[FORMAT].find(mergeFlag);
     if (flagStart != std::string::npos) {
         int valueStart = findValueStart(flagStart);
-        if (value != ".") {
+        if (value != "") {
             setGTValue(valueStart, value);
-        } else {
-            resetGTValue(valueStart);
         }
+        // else {
+        //     resetGTValue(valueStart);
+        // }
     } else {
-        if (value != ".") {
+        if (value != "") {
             addValues(mergeFlag, value);
         } else {
             addValues(mergeFlag, "./.");
@@ -351,21 +352,28 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
         int pos = std::stoi(fields[POS]) - 1;
         const auto& posPhasingResult = chrPhasingResult[fields[CHROM]];
         const auto& posPhasingResultIter = posPhasingResult.find(pos);
-        // Check if the variant is extracted from this VCF
-        std::string suffix = "";
-        // this pos is phase
-        if( posPhasingResultIter != posPhasingResult.end() && checkType(posPhasingResultIter->second.type) ){
-            const auto& phasingResult = posPhasingResultIter->second;
-            auto refHaplotype = phasingResult.refHaplotype;
-            auto altHaplotype = refHaplotype == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1;
-            auto phaseSet = phasingResult.phaseSet == -1 ? -1 : phasingResult.phaseSet + 1;
-            std::string gtValue = std::to_string(refHaplotype) + "|" + std::to_string(altHaplotype);
-            formatSample.setGTFlagAndValue("GT", gtValue, suffix);
-            formatSample.addFlagAndValue("PS", phaseSet, suffix);
+        size_t phasedCount = 0;
+        std::vector<std::string>::const_iterator haplotypeIter;
+        const PhasingResult* phasingResultPtr = nullptr;
+        // check exists in PhasingResult and the type is from the parser
+        if(posPhasingResultIter != posPhasingResult.end() && checkType(posPhasingResultIter->second.type)){
+            phasingResultPtr = &posPhasingResultIter->second;
+            phasedCount = phasingResultPtr->phaseSet.size();
+            haplotypeIter = phasingResultPtr->genotype.begin();
         }
-        // this pos has not been phased
-        else{
-            formatSample.addFlagAndValue("PS", -1, suffix);
+
+        for(size_t i = 0; i < PHASING_RESULT_SIZE; ++i) {
+            std::string suffix = (i > 0) ? std::to_string(i + 1) : "";
+            // this pos has been phased
+            if (phasingResultPtr && i < phasedCount) {
+                formatSample.setGTFlagAndValue("GT", *haplotypeIter++, suffix);
+                formatSample.addFlagAndValue("PS", phasingResultPtr->phaseSet[i], suffix);
+            }
+            // this pos has not been phased
+            else{
+                formatSample.setGTFlagAndValue("GT", "", suffix);
+                formatSample.addFlagAndValue("PS", -1, suffix);
+            }
         }
 
         for(std::vector<std::string>::iterator fieldIter = fields.begin(); fieldIter != fields.end(); ++fieldIter){
@@ -377,19 +385,19 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
     }
 }
 
-bool SnpParser::checkType(const int type) const {
+bool SnpParser::checkType(const VariantType type) const {
     if(type == SNP|| type == INDEL || type == DANGER_INDEL){
         return true;
     }
     return false;
 }
-bool SVParser::checkType(const int type) const {
+bool SVParser::checkType(const VariantType type) const {
     if(type == SV){
         return true;
     }
     return false;
 }
-bool METHParser::checkType(const int type) const {
+bool METHParser::checkType(const VariantType type) const {
     if(type == MOD_FORWARD_STRAND || type == MOD_REVERSE_STRAND){
         return true;
     }

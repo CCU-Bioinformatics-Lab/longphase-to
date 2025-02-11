@@ -345,13 +345,13 @@ void VairiantGraph::edgeConnectResult(){
             }
 
             blockStart = currPos;
-            posPhasingResult->emplace(currPos, PhasingResult(HAPLOTYPE1, blockStart, variantIter->second.type));
+            PhasingResult phasingResult(HAPLOTYPE1, blockStart, variantIter->second.type);
+            posPhasingResult->emplace(currPos, phasingResult);
         }
         else{
-            if( h1 > h2 || h1 < h2 ){
-                int currHP = ( h1 > h2 ? HAPLOTYPE1 : HAPLOTYPE2 );
-                posPhasingResult->emplace(currPos, PhasingResult(currHP, blockStart, variantIter->second.type));
-            }
+            Haplotype currHP = ( h1 > h2 ? HAPLOTYPE1 : HAPLOTYPE2 );
+            PhasingResult phasingResult(currHP, blockStart, variantIter->second.type);
+            posPhasingResult->emplace(currPos, phasingResult);
         }
         
         // Check if there is no edge from current node
@@ -556,7 +556,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
         for( auto variant : (*readIter).variantVec ){
             readCount++;
             if( variant.quality <= VARIANT_UNDEFINED ){
-                (*variantPosType)[variant.position].type = variant.quality;
+                (*variantPosType)[variant.position].type = static_cast<VariantType>(variant.quality);
             }
             else{
                 (*variantPosType)[variant.position].type = SNP;
@@ -587,15 +587,16 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
                 (*edgeList)[(*variant1Iter).position]->altcnt++ ;
             }
             (*edgeList)[(*variant1Iter).position]->coverage++;
+            auto node = (*edgeList)[(*variant1Iter).position];
 
             // add edge process
             for(int nextNode = 0 ; nextNode < params->connectAdjacent; nextNode++){
                 // this allele support ref
                 if( variant1Iter->allele == 0 )
-                    (*edgeList)[variant1Iter->position]->ref->addSubEdge((*variant1Iter), (*variant2Iter),readIter->first,params->baseQuality,params->edgeWeight,(*readIter).second.fakeRead);
+                    node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
                 // this allele support alt
                 if( (*variant1Iter).allele == 1 )
-                    (*edgeList)[(*variant1Iter).position]->alt->addSubEdge((*variant1Iter), (*variant2Iter),readIter->first,params->baseQuality,params->edgeWeight,(*readIter).second.fakeRead);
+                    node->alt->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
                 
                 // next snp
                 variant2Iter++;
@@ -651,9 +652,9 @@ void VairiantGraph::readCorrection(){
         
         // loop all variant 
         for( auto variant : (*readIter).variantVec ){
-            auto posPhasingResultIter = posPhasingResult->find(variant.position);
+            const auto& posPhasingResultIter = posPhasingResult->find(variant.position);
             if( posPhasingResultIter != posPhasingResult->end() ){
-                const PhasingResult& phasingResult = posPhasingResultIter->second;
+                const Haplotype refHaplotype = posPhasingResultIter->second.refHaplotype;
                 std::map<int,VariantEdge*>::iterator edgeIter = edgeList->find( variant.position );
                 //when vaf is 0 or 1, the fakeSnp will be true
                 bool fakeSnp = edgeIter->second->get_fakeSnp();
@@ -666,7 +667,7 @@ void VairiantGraph::readCorrection(){
                 }else if (variant.quality == MOD_FORWARD_STRAND || variant.quality == MOD_REVERSE_STRAND) {
                     continue;
                 }
-                if(variantHaplotype[phasingResult.refHaplotype][variant.allele] == HAPLOTYPE1)haplotype1Count += edgeWeight;
+                if(variantHaplotype[refHaplotype][variant.allele] == HAPLOTYPE1)haplotype1Count += edgeWeight;
                 else haplotype2Count += edgeWeight;
             }
             
@@ -736,24 +737,23 @@ void VairiantGraph::readCorrection(){
         double result2reads = hp2Ref + hp1Alt;
         double resultConfidence = std::max(result1reads, result2reads) / (result1reads + result2reads);
         
-        int hp1Result = -1;
-        int hp2Result = -1;
-        
+        Haplotype refHaplotypeResult = HAPLOTYPE_UNDEFINED;
+        Haplotype altHaplotypeResult = HAPLOTYPE_UNDEFINED;
         //std::cout << "RC\t" << position+1 << "\t" << result1reads << "\t" << result2reads << "\t" << resultConfidence << "\n" ;
         
         if( resultConfidence > snpConfidenceThreshold ){
             if( result1reads > result2reads ){
-                hp1Result = HAPLOTYPE1;
-                hp2Result = HAPLOTYPE2;
+                refHaplotypeResult = HAPLOTYPE1;
+                altHaplotypeResult = HAPLOTYPE2;
             }
             else if( result1reads < result2reads ){
-                hp1Result = HAPLOTYPE2;
-                hp2Result = HAPLOTYPE1;
+                refHaplotypeResult = HAPLOTYPE2;
+                altHaplotypeResult = HAPLOTYPE1;
             }
         }
 
-        if( hp1Result != -1 && hp2Result != -1 ){
-            posPhasingResultIter->second.refHaplotype = hp1Result;
+        if( refHaplotypeResult != HAPLOTYPE_UNDEFINED && altHaplotypeResult != HAPLOTYPE_UNDEFINED ){
+            posPhasingResultIter->second.refHaplotype = refHaplotypeResult;
         }
         else{
             posPhasingResult->erase(posPhasingResultIter);
@@ -761,6 +761,18 @@ void VairiantGraph::readCorrection(){
     }
 
     delete hpAlleleCountMap;
+}
+
+void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult) {
+    for (auto &posPhasingResultIter : posPhasingResult) {
+        auto &result = posPhasingResultIter.second;
+        if(result.refHaplotype == HAPLOTYPE1){
+            result.genotype = {"0|1"};
+        }
+        else if(result.refHaplotype == HAPLOTYPE2){
+            result.genotype = {"1|0"};
+        }
+    }
 }
 
 void VairiantGraph::writingDotFile(std::string dotPrefix){
