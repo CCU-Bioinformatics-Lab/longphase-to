@@ -25,16 +25,36 @@ enum Allele {
     ALT_ALLELE = 1
 };
 
-struct PhasingResult {
-    int refHaplotype;
-    int phaseSet;
-    int type;
-
-    PhasingResult(): refHaplotype(-1), phaseSet(-1), type(-1) {}
-    PhasingResult(int inRefHaplotype, int inPhaseSet, int inType)
-        : refHaplotype(inRefHaplotype), phaseSet(inPhaseSet), type(inType) {}
+enum VariantType {
+    // A VariantType value > 0 represents the quality of the read variant base and indicates that its type is SNP = -2.
+    VARIANT_UNDEFINED = -1, // Undefined variant type
+    SNP = -2, // Single Nucleotide Polymorphism
+    INDEL = -3, // Insertion/Deletion
+    SV = -4, // Structure Variation
+    MOD_FORWARD_STRAND = -5, // Forward Strand Modification
+    MOD_REVERSE_STRAND = -6, // Reverse Strand Modification
+    DANGER_INDEL = -7, // Danger Insertion/Deletion
 };
-typedef std::map<int,PhasingResult> PosPhasingResult;
+
+enum VariantGenotype {
+    HOM = 1, // homozygous
+    HET = 0, // heterozygous
+    GENOTYPE_UNDEFINED = -1, // undefined genotype
+};
+
+constexpr size_t PHASING_RESULT_SIZE = 1;
+struct PhasingResult {
+    Haplotype refHaplotype = HAPLOTYPE_UNDEFINED;
+    std::vector<int> phaseSet;
+    VariantType type = VARIANT_UNDEFINED;
+    std::vector<std::string> genotype;
+    PhasingResult() = default;
+    PhasingResult(Haplotype inRefHaplotype, int inPhaseSet, VariantType inType)
+        : refHaplotype(inRefHaplotype), type(inType){
+            phaseSet.push_back(inPhaseSet);
+    }
+};
+typedef std::map<int, PhasingResult> PosPhasingResult;
 typedef std::map<std::string, PosPhasingResult> ChrPhasingResult;
 
 // use for parsing
