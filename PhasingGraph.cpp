@@ -402,10 +402,11 @@ void VairiantGraph::edgeConnectResult(){
         float h2 = (*hpCountMap2)[currPos][HAPLOTYPE2] ;
 
         if(variantIter->second.origin == SOMATIC){
-            if(h1 == h2 && h1 != 0){
-                // maybe the variant is not somatic
-                // std::cout << chr << "\t" << currPos << "\t" << h1 << "\t" << h2 << "\n";
-            }else if(h1 != h2){
+            // if(h1 == h2 && h1 != 0){
+            //     // maybe the variant is not somatic
+            //     std::cout << chr << "\t" << currPos << "\t" << h1 << "\t" << h2 << "\n";
+            // }else if(h1 != h2){
+            if(h1 != h2){
                 Haplotype tmpHP = (h1 > h2 ? HAPLOTYPE1 : HAPLOTYPE2);
                 PhasingResult phasingResult(tmpHP, blockStart, variantIter->second.type, true);
                 posPhasingResult->emplace(currPos, phasingResult);
@@ -845,9 +846,12 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
                 if(highAllVote == highLeftVote){
                     if(voteResultArray[LEFT_HIGH_SR] > voteResultArray[LEFT_HIGH_SA]){
                         nodeIter->second.sourceHaplotype = REF_ALLELE;
-                    }else{
+                    }else if(voteResultArray[LEFT_HIGH_SR] < voteResultArray[LEFT_HIGH_SA]){
                         nodeIter->second.sourceHaplotype = ALT_ALLELE;
                     }
+                    // else{
+                    //     nodeIter->second.sourceHaplotype = Allele_UNDEFINED;
+                    // }
                 }
             }
         }
@@ -987,7 +991,11 @@ void VairiantGraph::readCorrection(){
             posPhasingResultIter->second.refHaplotype = refHaplotypeResult;
         }
         else{
-            posPhasingResult->erase(posPhasingResultIter);
+            if(!posPhasingResultIter->second.somatic){
+                posPhasingResult->erase(posPhasingResultIter);
+            }else{
+                posPhasingResultIter->second.refHaplotype = HAPLOTYPE_UNDEFINED;
+            }
         }
     }
 
@@ -999,7 +1007,7 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult) {
         auto &result = posPhasingResultIter.second;
         if (result.somatic) {
             if(result.refHaplotype == HAPLOTYPE_UNDEFINED){
-                result.genotype = {"0/0", "1/1"};
+                result.genotype = {"0|0", "1/1"};
                 result.phaseSet.push_back(-1);
             }
             else if(result.refHaplotype == HAPLOTYPE1){

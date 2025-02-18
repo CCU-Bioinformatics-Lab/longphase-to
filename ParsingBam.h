@@ -89,8 +89,8 @@ class BaseVairantParser{
             {"GT", "1", "String", "Genotype", false},
             {"PS", "1", "Integer", "Phase set identifier", false},
             // {"SH", "1", "Integer", "Source haplotype", false},
-            // {"GT2", "1", "String", "Sub genotype", false},
-            // {"PS2", "1", "Integer", "Sub phase set identifier", false},
+            {"GT2", "1", "String", "Sub genotype", false},
+            {"PS2", "1", "Integer", "Sub phase set identifier", false},
             // {"SH2", "1", "Integer", "Sub source haplotype", false},
         };
         bool commandLine;
