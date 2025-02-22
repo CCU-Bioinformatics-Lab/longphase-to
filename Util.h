@@ -16,7 +16,10 @@
 enum Haplotype {
     HAPLOTYPE_UNDEFINED = -1,
     HAPLOTYPE1 = 0,
-    HAPLOTYPE2 = 1
+    HAPLOTYPE2 = 1,
+    HAPLOTYPE3 = 2,
+    HAPLOTYPE1_1 = 3,
+    HAPLOTYPE2_1 = 4,
 };
 
 enum Allele {
