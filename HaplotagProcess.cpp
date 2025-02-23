@@ -547,7 +547,7 @@ void HaplotagProcess::getVote(std::array<int, HAPLOTYPE_SIZE> &countMap, double 
 }
 
 int HaplotagProcess::judgeHaplotype(const  bam_hdr_t &bamHdr,const bam1_t &aln, std::string chrName, double percentageThreshold, std::ofstream *tagResult, int &pqValue, const std::string &ref_string){
-    std::array<int, HAPLOTYPE_SIZE> countMap;
+    std::array<int, HAPLOTYPE_SIZE> countMap = {0};
 
     //record variants on this read
     std::map<int,int> variantsHP;
