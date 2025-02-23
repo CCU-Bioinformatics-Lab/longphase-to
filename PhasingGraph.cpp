@@ -186,26 +186,41 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, Varia
     float ra = refBestPair.second;
     float ar = altBestPair.first;
     float aa = altBestPair.second;
+    float para;
+    float cross;
+    if(currNodeIter->second.origin != SOMATIC && nextNodeIter->second.origin != SOMATIC){
+        para = rr + aa;
+        cross = ra + ar;
+    }else if(currNodeIter->second.origin == SOMATIC && nextNodeIter->second.origin != SOMATIC){
+        para = aa;
+        cross = ar;
+    }else if(currNodeIter->second.origin != SOMATIC && nextNodeIter->second.origin == SOMATIC){
+        para = aa;
+        cross = ra;
+    }else if(currNodeIter->second.origin == SOMATIC && nextNodeIter->second.origin == SOMATIC){
+        para = aa;
+        cross = 0;
+    }
     // initialize the edge connection
     // -1 : not connect
     int refAllele = -1;
     int altAllele = -1;
     
-    double edgeSimilarRatio = (double)std::min((rr+aa),(ar+ra)) / (double)std::max((rr+aa),(ar+ra));
+    double edgeSimilarRatio = (double)std::min((para),(cross)) / (double)std::max((para),(cross));
     vaf = (float)altcnt/(refcnt+altcnt);
     
     //std::cout << currPos+1 << "\t" << altcnt << "\t" << refcnt << "\t" << vaf << "\n" ;
-    if( rr + aa > ra + ar ){
+    if( para > cross ){
         // RR conect
         refAllele = 1;
         altAllele = 2;
     }
-    else if( rr + aa < ra + ar ){
+    else if( para < cross ){
         // RA connect
         refAllele = 2;
         altAllele = 1;
     }
-    else if( rr + aa == ra + ar ){
+    else if( para == cross ){
         // no connect 
         // not sure which is better
     }
@@ -213,7 +228,7 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, Varia
     if((currNodeIter->second.type == SNP && (nextNodeIter->second.type == MOD_FORWARD_STRAND || nextNodeIter->second.type == MOD_REVERSE_STRAND)) ||
        ((currNodeIter->second.type == MOD_FORWARD_STRAND || currNodeIter->second.type == MOD_REVERSE_STRAND) && nextNodeIter->second.type == SNP)){
         edgeThreshold = 0.3;
-        if((rr+ra+ar+aa) < 1){
+        if((para+cross) < 1){
             edgeThreshold = -1;
         }
     }
@@ -234,12 +249,12 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, Varia
         //std::cout<< "fakesnp\t" << currPos+1 << "->" << targetPos+1 << "\t" << vote.weight << "\n";
     }
     // the lower the edgeSimilarRatio means the higher reads consistency, and we will make the weight bigger if the reads consistency is high enough
-    else if ( (edgeSimilarRatio <= 0.1 && (rr + aa + ra + ar) >= 1)  || ((rr+aa)<1&&(ra+ar)>=1) || ((rr+aa)>=1&&(ra+ar)<1) ) {
+    else if ( (edgeSimilarRatio <= 0.1 && (para + cross) >= 1)  || ((para)<1&&(cross)>=1) || ((para)>=1&&(cross)<1) ) {
         vote.weight = 20 ;
     }
 
-    vote.para = rr + aa ;
-    vote.cross = ra + ar ;
+    vote.para = para ;
+    vote.cross = cross ;
     vote.ESR = edgeSimilarRatio ;
 
     // create edge pairs
@@ -401,35 +416,6 @@ void VairiantGraph::edgeConnectResult(){
         float h1 = (*hpCountMap2)[currPos][HAPLOTYPE1] ;
         float h2 = (*hpCountMap2)[currPos][HAPLOTYPE2] ;
 
-        if(variantIter->second.origin == SOMATIC){
-            // if(h1 == h2 && h1 != 0){
-            //     // maybe the variant is not somatic
-            //     std::cout << chr << "\t" << currPos << "\t" << h1 << "\t" << h2 << "\n";
-            // }else if(h1 != h2){
-            if(h1 != h2){
-                Haplotype tmpHP = (h1 > h2 ? HAPLOTYPE1 : HAPLOTYPE2);
-                PhasingResult phasingResult(tmpHP, blockStart, variantIter->second.type, true);
-                posPhasingResult->emplace(currPos, phasingResult);
-            }else{
-                auto sourceHaplotype = variantIter->second.sourceHaplotype;
-                Haplotype tmpHP;
-                if(sourceHaplotype != Allele_UNDEFINED){
-                    if(currPos >= lastConnectPos){
-                        blockStart = currPos;
-                        lastConnectPos = nextPos;
-                    }
-                    tmpHP = sourceHaplotype == REF_ALLELE ? HAPLOTYPE1 : HAPLOTYPE2;
-                }else{
-                    if(currPos >= lastConnectPos){
-                        blockStart = currPos;
-                    }
-                    tmpHP = HAPLOTYPE_UNDEFINED;
-                }
-                PhasingResult phasingResult(tmpHP, blockStart, variantIter->second.type, true);
-                posPhasingResult->emplace(currPos, phasingResult);
-            }
-            continue;
-        }
 
         //Handle the special case which One Long Read provides wrong info repeatedly
         std::pair<float, float> special = Onelongcase( (*hpCountMap3)[currPos] ) ;
@@ -448,9 +434,7 @@ void VairiantGraph::edgeConnectResult(){
             if(!posPhasingResult->empty() && posPhasingResult->rbegin()->first == blockStart){
                 posPhasingResult->erase(blockStart);
             }
-            if(prevIter != variantPosType->end() && prevIter->second.origin != SOMATIC){
-                blockStart = currPos;
-            }
+            blockStart = currPos;
             PhasingResult phasingResult(HAPLOTYPE1, blockStart, variantIter->second.type);
             posPhasingResult->emplace(currPos, phasingResult);
         }
@@ -468,20 +452,6 @@ void VairiantGraph::edgeConnectResult(){
         const auto& assignHaplotype = variantIter->second.assignHaplotype;
         // check connect between surrent SNP and next n SNPs
         for(int i = 0 ; i < params->connectAdjacent ; i++ ){
-            if (nextNodeIter->second.origin == SOMATIC){
-                auto acceptHaplotype = assignHaplotype.find(nextNodeIter->first);
-                if (acceptHaplotype != assignHaplotype.end()){
-                    int acceptHaplotypeValue = (acceptHaplotype->second == REF_ALLELE)
-                        ? (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1
-                        : (*posPhasingResult)[currPos].refHaplotype;
-                    (*hpCountMap2)[nextNodeIter->first][acceptHaplotypeValue] += 1;
-                }
-                nextNodeIter++;
-                if( nextNodeIter == variantPosType->end() ){
-                    break;
-                }
-                continue;
-            }
             VoteResult vote(currPos, 1); //used to store previous 20 variants' voting information
 
             // consider reads from the currnt SNP and the next (i+1)'s SNP
