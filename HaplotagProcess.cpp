@@ -166,7 +166,7 @@ void HaplotagProcess::parserProcess(std::string &input){
                     chrVariant[chr][pos].refHaplotype = HAPLOTYPE2;
                     chrVariant[chr][pos].altHaplotype = HAPLOTYPE1;
                 }
-                if( gtValue[0] == '0' && gtValue[2] == '0' ){
+                else if( gtValue[0] == '0' && gtValue[2] == '0' ){
                     std::string gt2Value = formatSample.getValue("GT2");
                     if( gt2Value[0] == '1' && gt2Value[2] == '.' ){
                         chrVariant[chr][pos].altHaplotype = HAPLOTYPE1_1;
@@ -468,7 +468,7 @@ void HaplotagProcess::initFlag(bam1_t *aln, std::string flag){
 }
 
 void HaplotagProcess::countSNPHaplotype(std::string &base, AlleleHaplotype &haplotypeBase, std::array<int, HAPLOTYPE_SIZE> &countMap, int &HP){
-    if(base == haplotypeBase.ref){
+    if(base == haplotypeBase.ref && haplotypeBase.refHaplotype != HAPLOTYPE_UNDEFINED){
         countMap[haplotypeBase.refHaplotype]++;
         HP = haplotypeBase.refHaplotype;
     }
@@ -493,57 +493,26 @@ void HaplotagProcess::getVote(std::array<int, HAPLOTYPE_SIZE> &countMap, double 
     std::map<int, int> haplotypeBase = {{HAPLOTYPE1, 1}, {HAPLOTYPE2, 2},
                                         {HAPLOTYPE1_1, 11}, {HAPLOTYPE2_1, 21},
                                         {HAPLOTYPE3, 33} };
-    if (countMap[HAPLOTYPE1_1] > 0 || countMap[HAPLOTYPE2_1] > 0) {
-        if(countMap[HAPLOTYPE1_1] > countMap[HAPLOTYPE2_1]){
-            min = countMap[HAPLOTYPE2_1];
-            max = countMap[HAPLOTYPE1_1];
-            hpResult = haplotypeBase[HAPLOTYPE1_1];
+    std::vector<std::pair<int, int>> variantKeys = { 
+                                                     {HAPLOTYPE1_1, HAPLOTYPE2_1},
+                                                     {HAPLOTYPE3, HAPLOTYPE2_1},
+                                                     {HAPLOTYPE1, HAPLOTYPE2} };
+    for (const auto& pair : variantKeys) {
+        int key1 = pair.first;
+        int key2 = pair.second;
+        if (countMap[key1] > 0 || countMap[key2] > 0) {
+            if (countMap[key1] > countMap[key2]) {
+                min = countMap[key2];
+                max = countMap[key1];
+                hpResult = haplotypeBase[key1];
+            } else {
+                min = countMap[key1];
+                max = countMap[key2];
+                hpResult = haplotypeBase[key2];
+            }
+            break;
         }
-        else{
-            min = countMap[HAPLOTYPE1_1];
-            max = countMap[HAPLOTYPE2_1];
-            hpResult = haplotypeBase[HAPLOTYPE2_1];
-        }
-        return;
     }
-    if (countMap[HAPLOTYPE3] > 0) {
-        min = 0;
-        max = countMap[HAPLOTYPE3];
-        hpResult = haplotypeBase[HAPLOTYPE3];
-        return;
-    }
-    if (countMap[HAPLOTYPE1] > 0 || countMap[HAPLOTYPE2] > 0) {
-        if (countMap[HAPLOTYPE1] > countMap[HAPLOTYPE2]) {
-            min = countMap[HAPLOTYPE2];
-            max = countMap[HAPLOTYPE1];
-            hpResult = haplotypeBase[HAPLOTYPE1];
-        } else {
-            min = countMap[HAPLOTYPE1];
-            max = countMap[HAPLOTYPE2];
-            hpResult = haplotypeBase[HAPLOTYPE2];
-        }
-        return;
-    }
-
-    // std::vector<std::pair<int, int>> variantKeys = { {HAPLOTYPE1_2, HAPLOTYPE_UNDEFINED},
-    //                                                  {HAPLOTYPE_UNDEFINED, HAPLOTYPE2_2},
-    //                                                  {HAPLOTYPE1, HAPLOTYPE2} };
-    // for (const auto& pair : variantKeys) {
-    //     int key1 = pair.first;
-    //     int key2 = pair.second;
-    //     if (countMap[key1] > 0 || countMap[key2] > 0) {
-    //         if (countMap[key1] > countMap[key2]) {
-    //             min = countMap[key2];
-    //             max = countMap[key1];
-    //             hpResult = haplotypeBase[key1];
-    //         } else {
-    //             min = countMap[key1];
-    //             max = countMap[key2];
-    //             hpResult = haplotypeBase[key2];
-    //         }
-    //         break;
-    //     }
-    // }
 }
 
 int HaplotagProcess::judgeHaplotype(const  bam_hdr_t &bamHdr,const bam1_t &aln, std::string chrName, double percentageThreshold, std::ofstream *tagResult, int &pqValue, const std::string &ref_string){
@@ -711,7 +680,11 @@ int HaplotagProcess::judgeHaplotype(const  bam_hdr_t &bamHdr,const bam1_t &aln, 
     if( max == 0 || max/(max+min) < percentageThreshold){
         // no tag
         pqValue = 0;
-        hpResult = 0;
+        if(hpResult != HAPLOTYPE1_1 && hpResult != HAPLOTYPE2_1){
+            hpResult = 0;
+        }else{
+            hpResult = 33;
+        }
     }
     else if( max == ( max + min ) ){
         pqValue=40;
