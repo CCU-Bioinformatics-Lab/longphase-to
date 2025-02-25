@@ -339,10 +339,6 @@ void VairiantGraph::edgeConnectResult(){
             if( currPos < lastConnectPos ){
                 continue;
             }
-            // check block size to remove one node island
-            if(!posPhasingResult->empty() && posPhasingResult->rbegin()->first == blockStart){
-                posPhasingResult->erase(blockStart);
-            }
 
             blockStart = currPos;
             PhasingResult phasingResult(HAPLOTYPE1, blockStart, variantIter->second.type);
