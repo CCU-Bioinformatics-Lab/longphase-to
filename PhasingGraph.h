@@ -14,24 +14,23 @@ using ThreePointEdge = std::array<float, 2*2*2>;
 enum VariantOriginType{
     GERMLINE = 0,
     SOMATIC = 1,
-    Origin_UNDEFINED = -1
+    ORIGIN_UNDEFINED = -1
 };
 
 enum EdgeType{
-    edge_rrr = 0,
-    edge_rra = 1,
-    edge_rar = 2,
-    edge_raa = 3,
-    edge_arr = 4,
-    edge_ara = 5,
-    edge_aar = 6,
-    edge_aaa = 7
+    EDGE_RRR = 0,
+    EDGE_RRA = 1,
+    EDGE_RAR = 2,
+    EDGE_RAA = 3,
+    EDGE_ARR = 4,
+    EDGE_ARA = 5,
+    EDGE_AAR = 6,
+    EDGE_AAA = 7
 };
 
 // "somatic" corresponds to variable `a`
 // "confidence" corresponds to variable `b`
-// "source haplotype(allele)" corresponds to variable `c`
-// `a_b_c` is used for their combined representation
+// `a_b` is used for their combined representation
 enum SomaticVote{
     VOTE_UNDEFINED = 0,
     MID_HIGH_SR = 1,
@@ -54,26 +53,26 @@ struct SomaticPattern {
 };
 
 constexpr std::array<SomaticPattern, 12> highSomaticPatterns = {{
-    {{edge_rrr, edge_ara, edge_aaa}, MID_HIGH_SA},
-    {{edge_rra, edge_arr, edge_aar}, MID_HIGH_SA},
-    {{edge_arr, edge_rra, edge_raa}, MID_HIGH_SR},
-    {{edge_ara, edge_rrr, edge_rar}, MID_HIGH_SR},
+    {{EDGE_RRR, EDGE_ARA, EDGE_AAA}, MID_HIGH_SA},
+    {{EDGE_RRA, EDGE_ARR, EDGE_AAR}, MID_HIGH_SA},
+    {{EDGE_ARR, EDGE_RRA, EDGE_RAA}, MID_HIGH_SR},
+    {{EDGE_ARA, EDGE_RRR, EDGE_RAR}, MID_HIGH_SR},
 
-    {{edge_rrr, edge_raa, edge_aaa}, LEFT_HIGH_SA},
-    {{edge_rra, edge_rar, edge_aar}, LEFT_HIGH_SA},
-    {{edge_rar, edge_rra, edge_ara}, LEFT_HIGH_SR},
-    {{edge_raa, edge_rrr, edge_arr}, LEFT_HIGH_SR},
+    {{EDGE_RRR, EDGE_RAA, EDGE_AAA}, LEFT_HIGH_SA},
+    {{EDGE_RRA, EDGE_RAR, EDGE_AAR}, LEFT_HIGH_SA},
+    {{EDGE_RAR, EDGE_RRA, EDGE_ARA}, LEFT_HIGH_SR},
+    {{EDGE_RAA, EDGE_RRR, EDGE_ARR}, LEFT_HIGH_SR},
 
-    {{edge_rrr, edge_aar, edge_aaa}, RIGHT_HIGH_SR},
-    {{edge_arr, edge_rar, edge_raa}, RIGHT_HIGH_SR},
-    {{edge_rar, edge_arr, edge_ara}, RIGHT_HIGH_SA},
-    {{edge_aar, edge_rrr, edge_rra}, RIGHT_HIGH_SA},
+    {{EDGE_RRR, EDGE_AAR, EDGE_AAA}, RIGHT_HIGH_SR},
+    {{EDGE_ARR, EDGE_RAR, EDGE_RAA}, RIGHT_HIGH_SR},
+    {{EDGE_RAR, EDGE_ARR, EDGE_ARA}, RIGHT_HIGH_SA},
+    {{EDGE_AAR, EDGE_RRR, EDGE_RRA}, RIGHT_HIGH_SA},
 }};
 
 constexpr std::array<SomaticPattern, 3> lowSomaticPatterns = {{
-    {{edge_ara, edge_ara, edge_aaa}, MID_LOW},
-    {{edge_raa, edge_raa, edge_aaa}, LEFT_LOW},
-    {{edge_aar, edge_aar, edge_aaa}, RIGHT_LOW},
+    {{EDGE_ARA, EDGE_ARA, EDGE_AAA}, MID_LOW},
+    {{EDGE_RAA, EDGE_RAA, EDGE_AAA}, LEFT_LOW},
+    {{EDGE_AAR, EDGE_AAR, EDGE_AAA}, RIGHT_LOW},
 }};
 
 class SubEdge{
@@ -127,9 +126,7 @@ struct VoteResult{
 struct VariantInfo {
     VariantType type;
     // bool homozygous; // 0 heterozygous 1 homozygous
-    VariantOriginType origin = Origin_UNDEFINED; // 0 germline 1 somatic -1 unknown
-    Allele sourceHaplotype = Allele_UNDEFINED; // REF_ALLELE ALT_ALLELE
-    std::map<int, Allele> assignHaplotype;
+    VariantOriginType origin = ORIGIN_UNDEFINED; // 0 germline 1 somatic -1 unknown
 };
 
 struct VariantEdge{

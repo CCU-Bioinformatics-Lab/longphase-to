@@ -453,7 +453,6 @@ void VairiantGraph::edgeConnectResult(){
         if( edgeIter==edgeList->end() ){
             continue;
         }
-        const auto& assignHaplotype = variantIter->second.assignHaplotype;
         // check connect between surrent SNP and next n SNPs
         for(int i = 0 ; i < params->connectAdjacent ; i++ ){
             VoteResult vote(currPos, 1); //used to store previous 20 variants' voting information
@@ -782,30 +781,22 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
                 
                 if (voteTmp == LEFT_HIGH_SR || voteTmp == LEFT_HIGH_SA || voteTmp == LEFT_LOW){
                     voteResult[nodeIter->first][voteTmp]++;
-                } else if (voteTmp == RIGHT_HIGH_SR){
+                } else if (voteTmp == RIGHT_HIGH_SR || voteTmp == RIGHT_HIGH_SA || voteTmp == RIGHT_LOW){
                     voteResult[nextNextNodeIter->first][voteTmp]++;
-                    nextNodeIter->second.assignHaplotype[nextNextNodeIter->first] = REF_ALLELE;
-                } else if (voteTmp == RIGHT_HIGH_SA){
-                    voteResult[nextNextNodeIter->first][voteTmp]++;
-                    nextNodeIter->second.assignHaplotype[nextNextNodeIter->first] = ALT_ALLELE;
-                } else if (voteTmp == RIGHT_LOW){
-                    voteResult[nextNextNodeIter->first][voteTmp]++;
-                } else if (voteTmp == MID_HIGH_SR){
-                    voteResult[nextNodeIter->first][voteTmp]++;
-                    nodeIter->second.assignHaplotype[nextNodeIter->first] = REF_ALLELE;
-                } else if (voteTmp == MID_HIGH_SA){
-                    voteResult[nextNodeIter->first][voteTmp]++;
-                    nodeIter->second.assignHaplotype[nextNodeIter->first] = ALT_ALLELE;
-                } else if (voteTmp == MID_LOW || voteTmp == DISAGREE){
+                } else if (voteTmp == MID_HIGH_SR || voteTmp == MID_HIGH_SA || voteTmp == MID_LOW || voteTmp == DISAGREE){
                     voteResult[nextNodeIter->first][voteTmp]++;
                 }
                 nextNextNodeIter++;
             }
             nextNodeIter++;
         }
-        auto voteResultIter = voteResult.find(nodeIter->first);
         auto variantIter = variants->find(nodeIter->first);
-        if(voteResultIter != voteResult.end() && variantIter->second.germline == false){
+        if(variantIter->second.germline){
+            nodeIter->second.origin = GERMLINE;
+            continue;
+        }
+        auto voteResultIter = voteResult.find(nodeIter->first);
+        if(voteResultIter != voteResult.end()){
             const auto& voteResultArray = voteResultIter->second;
             int highLeftVote = voteResultArray[LEFT_HIGH_SR] + voteResultArray[LEFT_HIGH_SA];
             int highRightVote = voteResultArray[RIGHT_HIGH_SR] + voteResultArray[RIGHT_HIGH_SA];
@@ -817,16 +808,6 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
             if (highAllVote > 0 || (lowVote > 0 && lowVote / allLowVote >= 0.2)) {
                 logFile<< chr << "\t" << nodeIter->first << "\n";
                 nodeIter->second.origin = SOMATIC;
-                if(highAllVote == highLeftVote){
-                    if(voteResultArray[LEFT_HIGH_SR] > voteResultArray[LEFT_HIGH_SA]){
-                        nodeIter->second.sourceHaplotype = REF_ALLELE;
-                    }else if(voteResultArray[LEFT_HIGH_SR] < voteResultArray[LEFT_HIGH_SA]){
-                        nodeIter->second.sourceHaplotype = ALT_ALLELE;
-                    }
-                    // else{
-                    //     nodeIter->second.sourceHaplotype = Allele_UNDEFINED;
-                    // }
-                }
             }
         }
     }
