@@ -12,6 +12,7 @@
 #include <ctime>
 #include <vector>
 #include <omp.h>
+#include <deque>
 
 enum Haplotype {
     HAPLOTYPE_UNDEFINED = -1,
@@ -42,6 +43,11 @@ enum VariantGenotype {
     GENOTYPE_UNDEFINED = -1, // undefined genotype
 };
 
+enum ClipFrontBack {
+    FRONT = 0,
+    BACK = 1
+};
+
 constexpr size_t PHASING_RESULT_SIZE = 1;
 struct PhasingResult {
     Haplotype refHaplotype = HAPLOTYPE_UNDEFINED;
@@ -55,7 +61,16 @@ struct PhasingResult {
     }
 };
 typedef std::map<int, PhasingResult> PosPhasingResult;
-typedef std::map<std::string, PosPhasingResult> ChrPhasingResult;
+// pos<read start|read end ,count >
+typedef std::map<int, std::array<int, 2>> ClipCount;
+struct ChrInfo{
+    PosPhasingResult posPhasingResult = PosPhasingResult();
+    ClipCount clipCount = ClipCount();
+    std::vector<int> largeGenomicEventInterval = std::vector<int>();
+    std::vector<std::pair<int, int>> smallGenomicEventRegion = std::vector<std::pair<int, int>>();
+};
+typedef std::map<std::string, std::map<int, PhasingResult>> ChrPhasingResult;
+
 
 // use for parsing
 struct Variant{

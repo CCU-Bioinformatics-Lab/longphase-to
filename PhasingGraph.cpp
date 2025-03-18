@@ -815,4 +815,441 @@ void VairiantGraph::phasingProcess(PosPhasingResult &inPosPhasingResult){
     this->readCorrection();  
 }
 
+Roller::Roller() {}
 
+Roller::Roller(size_t windowSize) : window(windowSize) {}
+
+Roller::Roller(size_t windowSize, const std::vector<double>& input) : window(windowSize), values(input) {}
+
+Roller& Roller::setValues(const std::vector<double>& input) {
+    values = input;
+    return *this;
+}
+    
+Roller& Roller::smooth() {
+    values = smooth(values);
+    return *this;
+}
+    
+Roller& Roller::forward() {
+    values = forward(values);
+    return *this;
+}
+    
+Roller& Roller::reverse() {
+    values = reverse(values);
+    return *this;
+}
+    
+Roller& Roller::downSampling(int distance) {
+    values = downSampling(values, distance);
+    return *this;
+}
+    
+Roller& Roller::directionalDifference(size_t distance) {
+    values = directionalDifference(values, distance);
+    return *this;
+}
+    
+Roller& Roller::opposite() {
+    values = opposite(values);
+    return *this;
+}
+    
+Roller& Roller::reverseNetValues() {
+    values = reverseNetValues(values);
+    return *this;
+}
+
+// Get the final result
+std::vector<double> Roller::getResult() const {
+    return values;
+}
+
+std::vector<double> Roller::smooth(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    std::deque<double> windowValues;
+    double rollingSum = 0.0;
+    size_t halfWindow = window / 2;
+
+    // initialize the first window
+    for (size_t i = 0; i <= std::min(halfWindow, values.size() - 1); ++i) {
+        windowValues.push_back(values[i]);
+        rollingSum += values[i];
+    }
+    results[0] = (rollingSum / windowValues.size());
+    
+    // start to process the rest of the values
+    for (size_t i = 1; i < values.size(); ++i) {
+        updateWindow(rollingSum, windowValues, values[i]);
+        results[i] = (rollingSum / windowValues.size());
+    }
+
+    return results;
+}
+
+std::vector<double> Roller::forward(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    std::deque<double> windowValues;
+    double rollingSum = 0;
+
+    for (int i = values.size() - 1; i >= 0; --i) {
+        updateWindow(rollingSum, windowValues, values[i]);
+        results[i] = (double)rollingSum / window;
+    }
+    return results;
+}
+
+std::vector<double> Roller::reverse(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    std::deque<double> windowValues;
+    double rollingSum = 0;
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        updateWindow(rollingSum, windowValues, values[i]);
+        results[i] = (double)rollingSum / window;
+    }
+    return results;
+}
+
+std::vector<double> Roller::downSampling(const std::vector<double>& values, int distance) {
+    std::vector<double> results(values.size() / distance + 1);
+    for (size_t i = 0; i < values.size(); i+=distance) {
+        results[i / distance] = values[i];
+    }
+    return results;
+}
+
+std::vector<double> Roller::directionalDifference(const std::vector<double>& values, size_t distance) {
+    std::vector<double> results(values.size());
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        double forwardShift = (i + distance < values.size()) ? values[i + distance] : 0.0;
+        double backwardShift = (i >= distance) ? values[i - distance] : 0.0;
+        results[i] = forwardShift - backwardShift;
+    }
+    return results;
+}
+
+std::vector<double> Roller::opposite(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    for (size_t i = 0; i < values.size(); ++i) {
+        results[i] = -values[i];
+    }
+    return results;
+}
+
+std::vector<double> Roller::reverseNetValues(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    results[0] = values[0];
+    for (size_t i = 1; i < values.size(); ++i) {
+        results[i] = values[i] - values[i-1];
+    }
+    return results;
+}
+
+std::vector<double> Roller::backValues(const std::vector<size_t>& idxs, const std::vector<double>& values) {
+    std::vector<double> results(idxs.size());
+    for (size_t i = 0; i < idxs.size(); ++i) {
+        results[i] = values[idxs[i]];
+    }
+    return results;
+}
+
+std::vector<int> Roller::backPosition(const std::vector<size_t>& idxs, const std::vector<int>& values) {
+    std::vector<int> results(idxs.size());
+    for (size_t i = 0; i < idxs.size(); ++i) {
+        results[i] = values[idxs[i]];
+    }
+    return results;
+}
+
+void Roller::replaceValue(ClipCount &clipCount, std::vector<int>& keys, std::vector<size_t>& idxs, std::vector<double>& replaceValues) {
+    for (size_t i = 0; i < idxs.size(); ++i) {
+        if(replaceValues[i] > 0){
+            clipCount[keys[idxs[i]]][FRONT] = replaceValues[i];
+        }
+        else{
+            clipCount[keys[idxs[i]]][BACK] = -replaceValues[i];
+        }
+    }
+}
+
+void Roller::updateWindow(double& rollingSum, std::deque<double>& windowValues, double newValue) {
+    // add the new value
+    rollingSum += newValue;
+    windowValues.push_back(newValue);
+    // remove the old value
+    if (windowValues.size() > window) {
+        rollingSum -= windowValues.front();
+        windowValues.pop_front();
+    }
+}
+
+// PeakFinder Implementation
+PointFinder::PointFinder(size_t peakDistance, int calibrationThreshold, size_t calibrationDistance)
+    : peakDistance(peakDistance), calibrationThreshold(calibrationThreshold) {
+    this->calibrationDistance = (calibrationDistance == 0) ? peakDistance * 2 : calibrationDistance;
+}
+
+std::vector<size_t> PointFinder::findAllPeaks(const std::vector<double>& values, double peakThreshold) {
+    std::vector<size_t> peaks;
+    bool isPeak = true;
+    for (size_t i = 1; i < values.size() - 1; ++i) {
+        isPeak = true;
+        if (values[i] >= peakThreshold) {
+            size_t start = this->start(i, peakDistance, 2);
+            size_t end = this->end(i, peakDistance, values.size() - 1, 2);
+            for (size_t j = start; j <= end; ++j) {
+                if (values[j] > values[i]){
+                    isPeak = false;
+                    break;
+                }
+            }
+            if (isPeak){
+                peaks.push_back(i);
+            }
+        }
+    }
+    return peaks;
+}
+
+std::vector<size_t> PointFinder::findPeaks(const std::vector<double>& values, double peakThreshold) {
+    std::vector<size_t> peakKeys;
+    if (values.empty()){
+        return peakKeys;
+    }
+    size_t valuesEnd = values.size() - 1;
+
+    for (size_t i = 1; i < valuesEnd; ++i) {
+        if (values[i] >= peakThreshold) {
+            size_t start = this->start(i, peakDistance, 2);
+            size_t end = this->end(i, peakDistance, valuesEnd, 2);
+            double start_value = start == 0 ? 0 : values[start];
+            double end_value = end == valuesEnd ? 0 : values[end];
+            if (values[i] >= start_value && values[i] >= end_value) {
+                if (!peakKeys.empty() && i - peakKeys.back() < peakDistance){
+                    if (values[i] > values[peakKeys.back()]){
+                        peakKeys.back() = i;
+                    }
+                }
+                else{
+                    peakKeys.push_back(i);
+                }
+            }
+        }
+    }
+    return peakKeys;
+}
+
+std::vector<size_t> PointFinder::getForwardGentle(const std::vector<double>& values, std::vector<size_t> peaks) {
+    std::vector<size_t> gentlePeaks;
+    for (size_t& peak : peaks) {
+        bool isGentle = true;
+        size_t end = this->end(peak, calibrationDistance, values.size());
+        for (size_t j = peak; j < end; ++j) {
+            if (values[j + 1] >= calibrationThreshold) {
+                isGentle = false;
+                break;
+            }
+        }
+        if (isGentle){
+            gentlePeaks.push_back(peak);
+        }
+    }
+    return gentlePeaks;
+}
+
+std::vector<size_t> PointFinder::getReverseGentle(const std::vector<double>& values, std::vector<size_t> peaks) {
+    std::vector<size_t> gentlePeaks;
+    for (size_t& peak : peaks) {
+        bool isGentle = true;
+        size_t start = this->start(peak, calibrationDistance);
+        for (size_t j = peak; j > start; --j) {
+            if (values[j - 1] <= -calibrationThreshold) {
+                isGentle = false;
+                break;
+            }
+        }
+        if (isGentle){
+            gentlePeaks.push_back(peak);
+        }
+    }
+    return gentlePeaks;
+}
+
+size_t PointFinder::start(size_t target, size_t distance, size_t distanceDivisor) {
+    return (target > distance) ? target - (distance / distanceDivisor) : 0;
+}
+
+size_t PointFinder::end(size_t target, size_t distance, size_t size, size_t distanceDivisor) {
+    return std::min(target + (distance / distanceDivisor), size);
+}
+
+Clip::Clip(std::string &chr){
+    this->chr = chr;
+    this->largeGenomicEventInterval = nullptr;
+    this->smallGenomicEventRegion = nullptr;
+}
+
+Clip::~Clip(){
+}
+
+void Clip::detectGenomicEventInterval(ClipCount &clipCount, std::vector<int> &largeGenomicEventInterval, std::vector<std::pair<int, int>> &smallGenomicEventRegion){
+    this->largeGenomicEventInterval = &largeGenomicEventInterval;
+    this->smallGenomicEventRegion = &smallGenomicEventRegion;
+    // Check if there are any clip counts to process
+    if (clipCount.size() > 0){
+        // Aggregate gentle clip values into a consolidated point
+        this->amplifyGentleClip(clipCount);
+        // Calculate and store the genomic event intervals, including both large and small event regions
+        this->detectInterval(clipCount);
+    }
+}
+
+void Clip::amplifyGentleClip(ClipCount &clipCount){
+    size_t window = 100;
+    size_t clipCountSize = clipCount.size();
+    if (clipCountSize <= window) return;
+    std::vector<int> positions(clipCountSize);
+    std::vector<double> netValues(clipCountSize);
+    std::vector<double> cumulativeSum(clipCountSize);
+
+    int totalNetValue = 0;
+    size_t i = 0;
+    for (auto& clipIter : clipCount) {
+        auto& counts = clipIter.second;
+        int netValue = counts[FRONT] - counts[BACK];
+        totalNetValue += netValue;
+        positions[i] = clipIter.first;
+        netValues[i] = netValue;
+        cumulativeSum[i] = totalNetValue;
+        i++;
+    }
+
+    std::vector<double> directionalDifference = Roller(window, cumulativeSum).smooth().directionalDifference().getResult();
+    std::vector<double> smoothedForwardSum = Roller(window, netValues).forward().forward().getResult();
+    std::vector<double> smoothedReverseOppositeSum = Roller(window, netValues).reverse().reverse().opposite().getResult();
+
+    PointFinder pointFinder(window);
+    std::vector<size_t> forwardPeaksIndex = pointFinder.findPeaks(smoothedForwardSum, 0.25);
+    std::vector<size_t> reversePeaksIndex = pointFinder.findPeaks(smoothedReverseOppositeSum, 0.25);
+    std::vector<size_t> gentleRiseIndex = pointFinder.getForwardGentle(netValues, forwardPeaksIndex);
+    std::vector<size_t> gentleFallIndex = pointFinder.getReverseGentle(netValues, reversePeaksIndex);
+
+    Roller::replaceValue(clipCount, positions, gentleRiseIndex, directionalDifference);
+    Roller::replaceValue(clipCount, positions, gentleFallIndex, directionalDifference);
+}
+
+void Clip::detectInterval(ClipCount &clipCount){
+    int upCount = 0;
+    int downCount = 0;
+    int smallRegion = 10000;
+    int lastPos = -smallRegion;
+
+    bool convert = 0;
+    bool push = 0;
+    bool status = clipCount.begin()->second[FRONT] > clipCount.begin()->second[BACK]; // 1: up, 0: down
+    int candidatePos = -1;
+    int candidateCount = 0;
+
+    int rejectCount = 0;
+    int lastRejectPos = -1;
+
+    bool artificialStatus = false;
+    int artificialCount = 0;
+    int artificialPos = -1;
+
+    clipCount[clipCount.rbegin()->first + smallRegion] = clipCount.rbegin()->second;
+
+    for(auto posIter = clipCount.begin(); posIter != clipCount.end() ; posIter++ ){
+        upCount = posIter->second[FRONT];
+        downCount = posIter->second[BACK];
+        if (posIter->first - lastPos >= smallRegion) {
+            if (candidatePos != -1 && push) {
+                largeGenomicEventInterval->push_back(candidatePos);
+                candidatePos = -1;
+            }else if (candidatePos != -1 && !push){
+                smallGenomicEventRegion->push_back(candidatePos > lastRejectPos ? std::make_pair(lastRejectPos, candidatePos) : std::make_pair(candidatePos, lastRejectPos));
+                candidatePos = -1;
+            }
+            convert = 0;
+            lastRejectPos = -1;
+        }
+
+        if (upCount >= 5 || downCount >= 5) {
+            if (candidatePos == -1) {
+                candidatePos = posIter->first;
+                status = posIter->second[FRONT] > posIter->second[BACK];
+                candidateCount = status ? upCount : downCount;
+                rejectCount = candidateCount / 4;
+                push = 1;
+                if (status != artificialStatus && artificialCount > rejectCount && candidatePos - artificialPos < 10000) {
+                    push = 0;
+                    lastRejectPos = artificialPos;
+                }
+            }
+            else {
+                if (!convert){
+                    if (status && downCount >= rejectCount) {
+                        status = 0;
+                        convert = 1;
+                        push = 0;
+                        lastRejectPos = posIter->first;
+                    }
+                    else if (!status && upCount >= rejectCount) {
+                        status = 1;
+                        convert = 1;
+                        push = 0;
+                        lastRejectPos = posIter->first;
+                    }
+                    else {
+                        candidateCount = std::max(candidateCount, status ? upCount : downCount);
+                        rejectCount = candidateCount / 4;
+                        if (!push && rejectCount > artificialCount ){
+                            push = 0;
+                            candidatePos = posIter->first;
+                        }
+                        if (!status){
+                            candidatePos = posIter->first;
+                        }
+                    }
+                }
+                else {
+                    lastRejectPos = posIter->first;
+                }
+            }
+            lastPos = posIter->first;
+        }
+        else {
+            if (artificialPos == -1) {
+                artificialPos = posIter->first;
+                artificialCount = std::max(upCount, downCount);
+                artificialStatus = (upCount > downCount);
+            }
+            else {
+                int newMax = std::max(upCount, downCount);
+                if (newMax >= artificialCount || posIter->first - artificialPos > smallRegion) {
+                    artificialStatus = (upCount > downCount);
+                    if (push){
+                        if (status != artificialStatus){
+                            artificialCount = newMax;
+                        }
+                    }
+                    else {
+                        artificialCount = newMax;
+                    }
+                    if (push && candidatePos - posIter->first < smallRegion && status != artificialStatus && candidatePos != -1 && artificialCount > rejectCount) {
+                        push = 0;
+                        lastRejectPos = posIter->first;
+                    }
+                    else if (!push && posIter->first - candidatePos < std::abs(artificialPos - candidatePos)){
+                        lastRejectPos = posIter->first;
+                    }
+                    artificialPos = posIter->first;
+                }
+            }
+        }
+    }
+    clipCount.erase(--clipCount.end());
+}

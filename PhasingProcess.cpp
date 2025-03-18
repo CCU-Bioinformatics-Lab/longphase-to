@@ -66,12 +66,12 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     // get all detected chromosome
     std::vector<std::string> chrName = snpFile.getChrVec();
 
-    // record all phasing result
-    ChrPhasingResult chrPhasingResult;
+    // record chromosome info
+    std::map<std::string, ChrInfo> chrInfoMap;
     // Initialize an empty map in chrPhasingResult to store all phasing results.
     // This is done to prevent issues with multi-threading, by defining an empty map first.
     for (std::vector<std::string>::iterator chrIter = chrName.begin(); chrIter != chrName.end(); chrIter++)    {
-        chrPhasingResult[*chrIter] = PosPhasingResult();
+        chrInfoMap[*chrIter] = ChrInfo();
     }
 
     // init data structure and get core n
@@ -89,7 +89,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     for(std::vector<std::string>::iterator chrIter = chrName.begin(); chrIter != chrName.end() ; chrIter++ ){
         
         std::time_t chrbegin = time(NULL);
-        
+        ChrInfo &chrInfo = chrInfoMap[*chrIter];
         // get lase SNP variant position
         int lastSNPpos = snpFile.getLastSNP((*chrIter));
         // therer is no variant on SNP file. 
@@ -104,7 +104,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         // use to store variant
         std::vector<ReadVariant> readVariantVec;
         // run fetch variant process
-        bamParser->direct_detect_alleles(lastSNPpos, threadPool, params, readVariantVec, chr_reference);
+        bamParser->direct_detect_alleles(lastSNPpos, threadPool, params, readVariantVec, chrInfo.clipCount, chr_reference);
         // free memory
         delete bamParser;
         
@@ -117,15 +117,22 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         if( readVariantVec.size() == 0 ){
             continue;
         }
+
+        // create a clip object and prepare to detect Interval
+        Clip *clip = new Clip(*chrIter);
+        // get the interval of the genomic event
+        clip->detectGenomicEventInterval(chrInfo.clipCount, chrInfo.largeGenomicEventInterval, chrInfo.smallGenomicEventRegion);
+        // free memory
+        delete clip;
         
         // create a graph object and prepare to phasing.
         VairiantGraph *vGraph = new VairiantGraph(chr_reference, params);
         // trans read-snp info to edge info
         vGraph->addEdge(readVariantVec);
         // run main algorithm
-        vGraph->phasingProcess(chrPhasingResult[*chrIter]);
+        vGraph->phasingProcess(chrInfo.posPhasingResult);
         // export phasing result
-        vGraph->exportPhasingResult(chrPhasingResult[*chrIter]);
+        vGraph->exportPhasingResult(chrInfo.posPhasingResult);
         // generate dot file
         if(params.generateDot){
             vGraph->writingDotFile((*chrIter));
@@ -142,6 +149,12 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         std::cerr<< "(" << (*chrIter) << "," << difftime(time(NULL), chrbegin) << "s)";
     }
     hts_tpool_destroy(threadPool.pool);
+    
+    // Transfer phasing results from chrInfoMap to chrPhasingResult
+    ChrPhasingResult chrPhasingResult;
+    for (const auto& chrIter : chrName) {
+        chrPhasingResult[chrIter] = chrInfoMap[chrIter].posPhasingResult;
+    }
 
     std::cerr<< "\nparsing total:  " << difftime(time(NULL), begin) << "s\n";
     
