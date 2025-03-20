@@ -74,15 +74,17 @@ typedef std::map<std::string, std::map<int, PhasingResult>> ChrPhasingResult;
 
 // use for parsing
 struct Variant{
-    Variant(int position, int allele, int quality):
+    Variant(int position, int allele, int quality, bool homozygous = false):
     position(position), 
     allele(allele), 
-    quality(quality){};
+    quality(quality),
+    homozygous(homozygous){};
     
     int position;
     int allele;
     int quality;
     bool underHomopolymer;
+    bool homozygous;
 };
 
 struct ReadVariant{

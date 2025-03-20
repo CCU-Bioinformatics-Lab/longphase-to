@@ -305,8 +305,14 @@ void VairiantGraph::edgeConnectResult(){
     // Avoid recording duplicate information,
     // only one of the two alleles needs to be used for each SNP
     for(auto variantIter = variantPosType->begin() ; variantIter != variantPosType->end() ; variantIter++ ){
+        if(variantIter->second.homozygous == true){
+            continue;
+        }
         // check next position
         auto nextNodeIter = std::next(variantIter, 1);
+        while(nextNodeIter != variantPosType->end() && nextNodeIter->second.homozygous == true){
+            nextNodeIter = std::next(nextNodeIter, 1);
+        }
         if( nextNodeIter == variantPosType->end() ){
             break;
         }
@@ -357,57 +363,60 @@ void VairiantGraph::edgeConnectResult(){
         }
 
         // check connect between surrent SNP and next n SNPs
-        for(int i = 0 ; i < params->connectAdjacent ; i++ ){
-            VoteResult vote(currPos, 1); //used to store previous 20 variants' voting information
+        for(int i = 0 ; i < params->connectAdjacent;){
+            if(nextNodeIter->second.homozygous == false){
+                i++;
+                VoteResult vote(currPos, 1); //used to store previous 20 variants' voting information
 
-            // consider reads from the currnt SNP and the next (i+1)'s SNP
-            std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(variantIter, nextNodeIter, params->isONT, params->edgeThreshold, vote, false);
-            
-            // if the target is a danger indel change its weight to 0.1
-            if ( (*variantPosType)[currPos].type == DANGER_INDEL ) {
-                vote.weight = 0.1 ;
-            }
-            // -1 : no connect  
-            //  1 : the haplotype of next (i+1)'s SNP are same as previous
-            //  2 : the haplotype of next (i+1)'s SNP are different as previous
-            if( tmp.first.second != -1 ){
-                // record the haplotype resut of next (i+1)'s SNP
-                if( (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE1 ){
-                    if( tmp.first.second == 1 ){
-                        // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE1].push_back(currPos);
-                        (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE1] += vote.weight;
-                        vote.hap = 1 ;
-                    }
-                    if( tmp.first.second == 2 ){
-                        // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE2].push_back(currPos);
-                        (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE2] += vote.weight;
-                        vote.hap = 2 ;
-                    }
-                }
-                if( (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE2 ){
-                    if( tmp.first.second == 1 ){
-                        // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE2].push_back(currPos);
-                        (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE2] += vote.weight;
-                        vote.hap = 2 ;
-                    }
-                    if( tmp.first.second == 2 ){
-                        // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE1].push_back(currPos);
-                        (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE1] += vote.weight;
-                        vote.hap = 1 ;
-                    }
-                }
-
-		        (*hpCountMap3)[nextNodeIter->first].push_back( vote );
-
-                if( params->generateDot ){
-                    std::string e1 = std::to_string(currPos+1) + ".1\t->\t" + std::to_string(tmp.first.first+1) + "." + std::to_string(tmp.first.second);
-                    std::string e2 = std::to_string(currPos+1) + ".2\t->\t" + std::to_string(tmp.second.first+1) + "." + std::to_string(tmp.second.second);
-
-                    dotResult.push_back(e1);
-                    dotResult.push_back(e2);
-                }
+                // consider reads from the currnt SNP and the next (i+1)'s SNP
+                std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(variantIter, nextNodeIter, params->isONT, params->edgeThreshold, vote, false);
                 
-                lastConnectPos = nextNodeIter->first;
+                // if the target is a danger indel change its weight to 0.1
+                if ( (*variantPosType)[currPos].type == DANGER_INDEL ) {
+                    vote.weight = 0.1 ;
+                }
+                // -1 : no connect  
+                //  1 : the haplotype of next (i+1)'s SNP are same as previous
+                //  2 : the haplotype of next (i+1)'s SNP are different as previous
+                if( tmp.first.second != -1 ){
+                    // record the haplotype resut of next (i+1)'s SNP
+                    if( (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE1 ){
+                        if( tmp.first.second == 1 ){
+                            // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE1].push_back(currPos);
+                            (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE1] += vote.weight;
+                            vote.hap = 1 ;
+                        }
+                        if( tmp.first.second == 2 ){
+                            // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE2].push_back(currPos);
+                            (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE2] += vote.weight;
+                            vote.hap = 2 ;
+                        }
+                    }
+                    if( (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE2 ){
+                        if( tmp.first.second == 1 ){
+                            // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE2].push_back(currPos);
+                            (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE2] += vote.weight;
+                            vote.hap = 2 ;
+                        }
+                        if( tmp.first.second == 2 ){
+                            // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE1].push_back(currPos);
+                            (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE1] += vote.weight;
+                            vote.hap = 1 ;
+                        }
+                    }
+
+                    (*hpCountMap3)[nextNodeIter->first].push_back( vote );
+
+                    if( params->generateDot ){
+                        std::string e1 = std::to_string(currPos+1) + ".1\t->\t" + std::to_string(tmp.first.first+1) + "." + std::to_string(tmp.first.second);
+                        std::string e2 = std::to_string(currPos+1) + ".2\t->\t" + std::to_string(tmp.second.first+1) + "." + std::to_string(tmp.second.second);
+
+                        dotResult.push_back(e1);
+                        dotResult.push_back(e2);
+                    }
+                    
+                    lastConnectPos = nextNodeIter->first;
+                }
             }
             nextNodeIter++;
             if( nextNodeIter == variantPosType->end() ){
@@ -557,6 +566,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
             else{
                 (*variantPosType)[variant.position].type = SNP;
             }
+            (*variantPosType)[variant.position].homozygous = variant.homozygous;
 
             mergeReadMap[(*readIter).read_name].variantVec.push_back(variant);
         }
@@ -586,14 +596,16 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
             auto node = (*edgeList)[(*variant1Iter).position];
 
             // add edge process
-            for(int nextNode = 0 ; nextNode < params->connectAdjacent; nextNode++){
-                // this allele support ref
-                if( variant1Iter->allele == 0 )
-                    node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
-                // this allele support alt
-                if( (*variant1Iter).allele == 1 )
-                    node->alt->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
-                
+            for(int nextNode = 0 ; nextNode < params->connectAdjacent;){
+                if(variant1Iter->homozygous == false|| variant2Iter->homozygous == false){
+                    nextNode++;
+                    // this allele support ref
+                    if( variant1Iter->allele == 0 )
+                        node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
+                    // this allele support alt
+                    if( (*variant1Iter).allele == 1 )
+                        node->alt->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
+                }
                 // next snp
                 variant2Iter++;
                 if( variant2Iter == readIter->second.variantVec.end() ){
