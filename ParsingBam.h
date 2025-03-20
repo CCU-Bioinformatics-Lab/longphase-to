@@ -19,6 +19,7 @@ struct RefAlt{
     bool is_reverse;
     bool is_modify;
     bool is_danger;
+    bool homozygous;
 };
 
 class FastaParser{
@@ -122,7 +123,7 @@ class SnpParser : public BaseVairantParser{
         void parserProcess(std::string &input);
         void fetchAndValidateTag(const int checkTag, const char *tag, hts_pos_t pos);
         VariantGenotype confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
-        void recordVariant(std::string &chr, bcf1_t *rec, std::map<std::string, std::map<int, RefAlt> > *chrVariant);
+        void recordVariant(std::string &chr, bcf1_t *rec, VariantGenotype parserType, std::map<std::string, std::map<int, RefAlt> > *chrVariant);
 
     public:
 

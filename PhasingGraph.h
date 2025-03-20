@@ -59,7 +59,7 @@ struct VoteResult{
 
 struct VariantInfo {
     VariantType type;
-    // bool homozygous; // 0 heterozygous 1 homozygous
+    bool homozygous; // 0 heterozygous 1 homozygous
     // bool somatic; // 0 germline 1 somatic
 };
 

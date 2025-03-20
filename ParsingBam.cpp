@@ -444,7 +444,7 @@ SnpParser::SnpParser(PhasingParameters &in_params){
             if ( parserType != GENOTYPE_UNDEFINED ) {
                 // get chromosome string
                 std::string chr = seqnames[rec->rid];
-                recordVariant(chr, rec, chrVariant);
+                recordVariant(chr, rec, parserType, chrVariant);
             }
         }
     }
@@ -553,30 +553,31 @@ VariantGenotype SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line,
     int checkTag = bcf_get_format_int32(hdr, line, tag, &gt, &ngt_arr);
     fetchAndValidateTag(checkTag, tag, pos);
     
-    // hetero SNP
+    // heterozygous SNP
     if ((gt[0] == 2 && gt[1] == 4) || (gt[0] == 4 && gt[1] == 2) || // 0/1, 1/0
         (gt[0] == 2 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 3) || // 0|1, 1|0
         (gt[0] == 0 && gt[1] == 3) || (gt[0] == 2 && gt[1] == 1)) { // .|0, 0|.
         return HET;
     }
-    // // homo SNP
-    // else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
-    //          (gt[0] == 4 && gt[1] == 5) || // 1|1
-    //          (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1)) { // .|1, 1|.
-    //     return HOM;
-    // }
+    // homozygous SNP
+    else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
+             (gt[0] == 4 && gt[1] == 5) || // 1|1
+             (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1)) { // .|1, 1|.
+        return HOM;
+    }
     else {
         return GENOTYPE_UNDEFINED;
     }
 }
 
-void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, std::map<std::string, std::map<int, RefAlt> > *chrVariant) {
+void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, VariantGenotype parserType, std::map<std::string, std::map<int, RefAlt> > *chrVariant) {
     // position is 0-base
     int variantPos = rec->pos;
     // get r alleles
     RefAlt tmp;
     tmp.Ref = rec->d.allele[0];
     tmp.Alt = rec->d.allele[1];
+    tmp.homozygous = parserType;
     
     //prevent the MAVs calling error which makes the GT=0/1
     if ( rec->d.allele[1][tmp.Alt.size()+1] != '\0' ){
@@ -597,6 +598,13 @@ bool SnpParser::findSNP(std::string chr, int position){
     // empty position
     if( posIter == (*chrVariant)[chr].end() )
         return false;
+
+    // If the variant is homozygous (homozygous is true), remove the SNP at this position from chrVariant 
+    // and prioritize other variants.
+    if (posIter->second.homozygous == true){
+        (*chrVariant)[chr].erase(posIter);
+        return false;
+    }
         
     return true;
 }
@@ -640,9 +648,18 @@ void SnpParser::filterSNP(std::string chr, std::vector<ReadVariant> &readVariant
             consecutiveAllele[(*posIter).first] = homopolymerLength((*posIter).first, chr_reference);
         }
         std::map<int, RefAlt>::iterator currSNPIter = (*chrIter).second.begin();
+        //skip homozygous SNP
+        while( currSNPIter != (*chrIter).second.end() && currSNPIter->second.homozygous == true ){
+            currSNPIter++;
+        }
         std::map<int, RefAlt>::iterator nextSNPIter = std::next(currSNPIter,1);
         // check whether each SNP pair falls in an area that is not easy to phasing
         while( currSNPIter != (*chrIter).second.end() && nextSNPIter != (*chrIter).second.end() ){
+            //skip homozygous SNP
+            if (nextSNPIter->second.homozygous == true){
+                nextSNPIter++;
+                continue;
+            }
             int currPos = (*currSNPIter).first;
             int nextPos = (*nextSNPIter).first;
             // filter one of SNP if this SNP pair falls in homopolymer and distance<=2
@@ -652,7 +669,7 @@ void SnpParser::filterSNP(std::string chr, std::vector<ReadVariant> &readVariant
                 continue;
             }
             
-            currSNPIter++;
+            currSNPIter = nextSNPIter;
             nextSNPIter++;
         }
         
@@ -1108,7 +1125,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
             
                     if( allele != -1 ){
                         // record snp result
-                        Variant *tmpVariant = new Variant(variantPos, allele, base_q);
+                        Variant *tmpVariant = new Variant(variantPos, allele, base_q, currentVariantIter->second.homozygous);
                         (*tmpReadResult).variantVec.push_back( (*tmpVariant) );
                         delete tmpVariant;                        
                     }
@@ -1117,6 +1134,13 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                 }
                 else break;
             }
+        }
+        // Exclude the case where, in a homopolymer deletion, a hom variant position 
+        // that is less than the het variant position prevents the het variant from being pushed.
+        while( currentVariantIter != currentVariants->end() && 
+               (*currentVariantIter).second.homozygous == true && 
+               (*currentVariantIter).first < ref_pos + cigar_oplen) {
+            currentVariantIter++;
         }
         
         // Preparing to process the next CIGAR operator.
