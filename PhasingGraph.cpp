@@ -339,22 +339,22 @@ void VairiantGraph::edgeConnectResult(){
             h2 = special.second ;
         }
 
+        Haplotype currHP = HAPLOTYPE_UNDEFINED;
         // new block, set this position as block start 
         if( h1 == h2 ){
             // No new blocks should be created if the next SNP has already been picked up
             if( currPos < lastConnectPos ){
                 continue;
             }
-
             blockStart = currPos;
-            PhasingResult phasingResult(HAPLOTYPE1, blockStart, variantIter->second.type);
-            posPhasingResult->emplace(currPos, phasingResult);
+            currHP = HAPLOTYPE1;
         }
         else{
-            Haplotype currHP = ( h1 > h2 ? HAPLOTYPE1 : HAPLOTYPE2 );
-            PhasingResult phasingResult(currHP, blockStart, variantIter->second.type);
-            posPhasingResult->emplace(currPos, phasingResult);
+            currHP = ( h1 > h2 ? HAPLOTYPE1 : HAPLOTYPE2 );
         }
+        // If 'continue' is not executed, a phasing result is created for the current position
+        PhasingResult phasingResult(currHP, blockStart, variantIter->second.type);
+        posPhasingResult->emplace(currPos, phasingResult);
         
         // Check if there is no edge from current node
         std::map<int,VariantEdge*>::iterator edgeIter = edgeList->find( currPos );
