@@ -359,7 +359,7 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
         // check exists in PhasingResult and the type is from the parser
         if(posPhasingResultIter != posPhasingResult.end() && checkType(posPhasingResultIter->second.type)){
             phasingResultPtr = &posPhasingResultIter->second;
-            phasedCount = phasingResultPtr->phaseSet.size();
+            phasedCount = phasingResultPtr->genotype.size();
             haplotypeIter = phasingResultPtr->genotype.begin();
         }
 

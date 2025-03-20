@@ -48,7 +48,7 @@ enum ClipFrontBack {
     BACK = 1
 };
 
-constexpr size_t PHASING_RESULT_SIZE = 1;
+constexpr size_t PHASING_RESULT_SIZE = 2;
 struct PhasingResult {
     Haplotype refHaplotype = HAPLOTYPE_UNDEFINED;
     std::vector<int> phaseSet;
@@ -59,15 +59,29 @@ struct PhasingResult {
         : refHaplotype(inRefHaplotype), type(inType){
             phaseSet.push_back(inPhaseSet);
     }
+    PhasingResult(int inPhaseSet, VariantType inType, std::string inGenotype)
+        : type(inType){
+            phaseSet.push_back(inPhaseSet);
+            genotype.push_back(inGenotype);
+    }
 };
 typedef std::map<int, PhasingResult> PosPhasingResult;
 // pos<read start|read end ,count >
 typedef std::map<int, std::array<int, 2>> ClipCount;
+struct LOHSegment{
+    int start;
+    int end;
+    Allele startAllele;
+    Allele endAllele;
+    LOHSegment(int inStart, int inEnd): 
+        start(inStart), end(inEnd), startAllele(Allele_UNDEFINED), endAllele(Allele_UNDEFINED){}
+};
 struct ChrInfo{
     PosPhasingResult posPhasingResult = PosPhasingResult();
     ClipCount clipCount = ClipCount();
     std::vector<int> largeGenomicEventInterval = std::vector<int>();
     std::vector<std::pair<int, int>> smallGenomicEventRegion = std::vector<std::pair<int, int>>();
+    std::vector<LOHSegment> LOHSegments = std::vector<LOHSegment>();
 };
 typedef std::map<std::string, std::map<int, PhasingResult>> ChrPhasingResult;
 

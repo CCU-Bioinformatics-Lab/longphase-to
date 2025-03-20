@@ -118,7 +118,7 @@ class VairiantGraph{
         
         void readCorrection();
 
-        void edgeConnectResult();
+        void edgeConnectResult(std::vector<LOHSegment> &LOHSegments);
         
         std::pair<float,float> Onelongcase( std::vector<VoteResult> vote ) ;
 
@@ -129,9 +129,9 @@ class VairiantGraph{
     
         void addEdge(std::vector<ReadVariant> &in_readVariant);
         
-        void phasingProcess(PosPhasingResult &posPhasingResult);
+        void phasingProcess(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments);
 
-        void exportPhasingResult(PosPhasingResult &posPhasingResult);
+        void exportPhasingResult(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments);
         
         void writingDotFile(std::string dotPrefix);
         std::map<std::string,int>* getReadHP();
@@ -205,6 +205,7 @@ class Clip{
         Clip(std::string &chr);
         ~Clip();
         void detectGenomicEventInterval(ClipCount &clipCount, std::vector<int> &largeGenomicEventInterval, std::vector<std::pair<int, int>> &smallGenomicEventRegion);
+        void detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegments);
 };
 
 #endif

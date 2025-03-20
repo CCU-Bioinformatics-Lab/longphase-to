@@ -122,6 +122,8 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         Clip *clip = new Clip(*chrIter);
         // get the interval of the genomic event
         clip->detectGenomicEventInterval(chrInfo.clipCount, chrInfo.largeGenomicEventInterval, chrInfo.smallGenomicEventRegion);
+        // get the region of the LOH
+        clip->detectLOHRegion(snpFile, chrInfo.LOHSegments);
         // free memory
         delete clip;
         
@@ -130,9 +132,9 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         // trans read-snp info to edge info
         vGraph->addEdge(readVariantVec);
         // run main algorithm
-        vGraph->phasingProcess(chrInfo.posPhasingResult);
+        vGraph->phasingProcess(chrInfo.posPhasingResult, chrInfo.LOHSegments);
         // export phasing result
-        vGraph->exportPhasingResult(chrInfo.posPhasingResult);
+        vGraph->exportPhasingResult(chrInfo.posPhasingResult, chrInfo.LOHSegments);
         // generate dot file
         if(params.generateDot){
             vGraph->writingDotFile((*chrIter));
