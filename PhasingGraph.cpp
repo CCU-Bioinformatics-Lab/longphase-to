@@ -1041,17 +1041,18 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
     Haplotype connectedHP = HAPLOTYPE_UNDEFINED;
     Allele nextConnectedAllele = Allele_UNDEFINED;
     auto lohIter = LOHSegments.begin();
-    Allele connectedAllele = lohIter->startAllele;
-    if(connectedAllele != Allele_UNDEFINED){
-        connectedHP = (connectedAllele == REF_ALLELE) ? 
-                    (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) :
-                    lastHP;
-        // lastPhaseSet = lastPhaseSet;
-    }else{
-        lastPhaseSet = variantPosType->begin()->first;
+    if(lohIter != LOHSegments.end()){
+        Allele connectedAllele = lohIter->startAllele;
+        if(connectedAllele != Allele_UNDEFINED){
+            connectedHP = (connectedAllele == REF_ALLELE) ? 
+                        (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) :
+                        lastHP;
+            // lastPhaseSet = lastPhaseSet;
+        }else{
+            lastPhaseSet = variantPosType->begin()->first;
+        }
+        nextConnectedAllele = lohIter->endAllele;
     }
-    nextConnectedAllele = lohIter->endAllele;
-
 
     for(auto variantIter = variantPosType->begin() ; variantIter != variantPosType->end() ; variantIter++ ){
         while(lohIter != LOHSegments.end() && variantIter->first > lohIter->end){
