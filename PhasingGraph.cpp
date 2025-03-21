@@ -377,7 +377,7 @@ std::pair<float,float> VairiantGraph::Onelongcase( std::vector<VoteResult> vote 
 }
 
 //VairiantGraph
-void VairiantGraph::edgeConnectResult(){
+void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
     // current snp, haplotype (1 or 2), support snp
     // std::map<int, std::map<int,std::vector<int> > > *hpCountMap = new std::map<int, std::map<int,std::vector<int> > >;
     // current variant position, haplotype (1 or 2), previous variants' voting result
@@ -390,6 +390,12 @@ void VairiantGraph::edgeConnectResult(){
     int nextPos = -1;
     int lastConnectPos = -1;
     auto prevIter = variantPosType->end();
+
+    auto lohIter = LOHSegments.begin();
+    bool isLOH = false;
+    bool genomicEventChange = false;
+    int prevPhasedNode = -1;
+    Haplotype connectHP = HAPLOTYPE_UNDEFINED;
 
     // Visit all position and assign SNPs to haplotype.
     // Avoid recording duplicate information,
@@ -410,6 +416,50 @@ void VairiantGraph::edgeConnectResult(){
             continue;
         }
         
+        Haplotype currHP = HAPLOTYPE1;
+        while (lohIter != LOHSegments.end() && currPos > lohIter->start){
+            lohIter++;
+            isLOH = false;
+            genomicEventChange = true;
+        }
+        bool inLOHRegion = (lohIter != LOHSegments.end() && lohIter->start <= currPos && currPos <= lohIter->end);
+        if(inLOHRegion && !isLOH){
+            isLOH = true;
+            genomicEventChange = true;
+        }
+        if(genomicEventChange == true && variantIter->second.homozygous == isLOH){
+            std::map<int,VariantEdge*>::iterator edgeIter = edgeList->find(prevPhasedNode);
+            if(edgeIter!=edgeList->end()){
+                float ra = edgeIter->second->ref->getAltReadCount(currPos);
+                float ar = edgeIter->second->alt->getRefReadCount(currPos);
+                float aa = edgeIter->second->alt->getAltReadCount(currPos);
+                float connectRef = isLOH ? ra : ar;
+                float connectAlt = aa;
+                if(connectRef + connectAlt > 0 && std::max(connectRef, connectAlt) / (connectRef + connectAlt) >= 0.8){
+                    bool isRefDominant = (connectRef > connectAlt);
+                    if (isRefDominant) {
+                        connectHP = ((*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE1) ? HAPLOTYPE2 : HAPLOTYPE1;
+                    } else {
+                        connectHP = (*posPhasingResult)[currPos].refHaplotype;
+                    }
+                    if (isLOH) {
+                        lohIter->startAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
+                    } else {
+                        lohIter->endAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
+                        currHP = connectHP;
+                    }
+                    hpCountMap2->clear();
+                    hpCountMap3->clear();
+                }
+            }
+            genomicEventChange = false;
+        }
+        if(variantIter->second.homozygous == true){
+            if(isLOH == true){
+                prevPhasedNode = currPos;
+            }
+            continue;
+        }
         // get the number of HP1 and HP2 supported reference allele
         //int h1 = (*hpCountMap)[currPos][HAPLOTYPE1].size();
         //int h2 = (*hpCountMap)[currPos][HAPLOTYPE2].size();
@@ -424,7 +474,6 @@ void VairiantGraph::edgeConnectResult(){
             h2 = special.second ;
         }
 
-        Haplotype currHP = HAPLOTYPE_UNDEFINED;
         // new block, set this position as block start 
         if( h1 == h2 ){
             // No new blocks should be created if the next SNP has already been picked up
@@ -435,18 +484,17 @@ void VairiantGraph::edgeConnectResult(){
                 }
                 continue;
             }
-            // check block size to remove one node island
-            if(!posPhasingResult->empty() && posPhasingResult->rbegin()->first == blockStart){
-                posPhasingResult->erase(blockStart);
-            }
             blockStart = currPos;
-            currHP = HAPLOTYPE1;
         }
         else{
             currHP = ( h1 > h2 ? HAPLOTYPE1 : HAPLOTYPE2 );
         }
+        // If 'continue' is not executed, a phasing result is created for the current position
         PhasingResult phasingResult(currHP, blockStart, variantIter->second.type, variantIter->second.origin == SOMATIC);
         posPhasingResult->emplace(currPos, phasingResult);
+        if(!isLOH){
+            prevPhasedNode = currPos;
+        }
         
         // Check if there is no edge from current node
         std::map<int,VariantEdge*>::iterator edgeIter = edgeList->find( currPos );
@@ -454,57 +502,60 @@ void VairiantGraph::edgeConnectResult(){
             continue;
         }
         // check connect between surrent SNP and next n SNPs
-        for(int i = 0 ; i < params->connectAdjacent ; i++ ){
-            VoteResult vote(currPos, 1); //used to store previous 20 variants' voting information
+        for(int i = 0 ; i < params->connectAdjacent;){
+            if(nextNodeIter->second.homozygous == false){
+                i++;
+                VoteResult vote(currPos, 1); //used to store previous 20 variants' voting information
 
-            // consider reads from the currnt SNP and the next (i+1)'s SNP
-            std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(variantIter, nextNodeIter, params->isONT, params->edgeThreshold, vote, false);
-            
-            // if the target is a danger indel change its weight to 0.1
-            if ( (*variantPosType)[currPos].type == DANGER_INDEL ) {
-                vote.weight = 0.1 ;
-            }
-            // -1 : no connect  
-            //  1 : the haplotype of next (i+1)'s SNP are same as previous
-            //  2 : the haplotype of next (i+1)'s SNP are different as previous
-            if( tmp.first.second != -1 ){
-                // record the haplotype resut of next (i+1)'s SNP
-                if( (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE1 ){
-                    if( tmp.first.second == 1 ){
-                        // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE1].push_back(currPos);
-                        (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE1] += vote.weight;
-                        vote.hap = 1 ;
-                    }
-                    if( tmp.first.second == 2 ){
-                        // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE2].push_back(currPos);
-                        (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE2] += vote.weight;
-                        vote.hap = 2 ;
-                    }
-                }
-                if( (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE2 ){
-                    if( tmp.first.second == 1 ){
-                        // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE2].push_back(currPos);
-                        (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE2] += vote.weight;
-                        vote.hap = 2 ;
-                    }
-                    if( tmp.first.second == 2 ){
-                        // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE1].push_back(currPos);
-                        (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE1] += vote.weight;
-                        vote.hap = 1 ;
-                    }
-                }
-
-		        (*hpCountMap3)[nextNodeIter->first].push_back( vote );
-
-                if( params->generateDot ){
-                    std::string e1 = std::to_string(currPos+1) + ".1\t->\t" + std::to_string(tmp.first.first+1) + "." + std::to_string(tmp.first.second);
-                    std::string e2 = std::to_string(currPos+1) + ".2\t->\t" + std::to_string(tmp.second.first+1) + "." + std::to_string(tmp.second.second);
-
-                    dotResult.push_back(e1);
-                    dotResult.push_back(e2);
-                }
+                // consider reads from the currnt SNP and the next (i+1)'s SNP
+                std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(variantIter, nextNodeIter, params->isONT, params->edgeThreshold, vote, false);
                 
-                lastConnectPos = nextNodeIter->first;
+                // if the target is a danger indel change its weight to 0.1
+                if ( (*variantPosType)[currPos].type == DANGER_INDEL ) {
+                    vote.weight = 0.1 ;
+                }
+                // -1 : no connect  
+                //  1 : the haplotype of next (i+1)'s SNP are same as previous
+                //  2 : the haplotype of next (i+1)'s SNP are different as previous
+                if( tmp.first.second != -1 ){
+                    // record the haplotype resut of next (i+1)'s SNP
+                    if( (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE1 ){
+                        if( tmp.first.second == 1 ){
+                            // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE1].push_back(currPos);
+                            (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE1] += vote.weight;
+                            vote.hap = 1 ;
+                        }
+                        if( tmp.first.second == 2 ){
+                            // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE2].push_back(currPos);
+                            (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE2] += vote.weight;
+                            vote.hap = 2 ;
+                        }
+                    }
+                    if( (*posPhasingResult)[currPos].refHaplotype == HAPLOTYPE2 ){
+                        if( tmp.first.second == 1 ){
+                            // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE2].push_back(currPos);
+                            (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE2] += vote.weight;
+                            vote.hap = 2 ;
+                        }
+                        if( tmp.first.second == 2 ){
+                            // (*hpCountMap)[nextNodeIter->first][HAPLOTYPE1].push_back(currPos);
+                            (*hpCountMap2)[nextNodeIter->first][HAPLOTYPE1] += vote.weight;
+                            vote.hap = 1 ;
+                        }
+                    }
+
+                    (*hpCountMap3)[nextNodeIter->first].push_back( vote );
+
+                    if( params->generateDot ){
+                        std::string e1 = std::to_string(currPos+1) + ".1\t->\t" + std::to_string(tmp.first.first+1) + "." + std::to_string(tmp.first.second);
+                        std::string e2 = std::to_string(currPos+1) + ".2\t->\t" + std::to_string(tmp.second.first+1) + "." + std::to_string(tmp.second.second);
+
+                        dotResult.push_back(e1);
+                        dotResult.push_back(e2);
+                    }
+                    
+                    lastConnectPos = nextNodeIter->first;
+                }
             }
             nextNodeIter++;
             if( nextNodeIter == variantPosType->end() ){
@@ -658,6 +709,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
             else{
                 (*variantPosType)[variant.position].type = SNP;
             }
+            (*variantPosType)[variant.position].homozygous = variant.homozygous;
 
             mergeReadMap[(*readIter).read_name].variantVec.push_back(variant);
         }
@@ -686,23 +738,33 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
             }
             (*edgeList)[(*variant1Iter).position]->coverage++;
             auto node = (*edgeList)[(*variant1Iter).position];
-
+            int addHomCount = 0;
             // add edge process
-            for(int nextNode = 0 ; nextNode < params->connectAdjacent; nextNode++){
-                for(int nextNextNode = 0 ; nextNextNode < params->somaticConnectAdjacent && nextNode < params->somaticConnectAdjacent; nextNextNode++){
-                    if( variant3Iter == readIter->second.variantVec.end() ){
-                        break;
-                    }
-                    node->addSegmentEdge((*variant1Iter), (*variant2Iter), (*variant3Iter));
-                    variant3Iter++;
+            for(int nextNode = 0 ; nextNode < params->connectAdjacent;){
+                if(variant1Iter->homozygous == true || variant2Iter->homozygous == true){
+                    addHomCount++;
                 }
-                // this allele support ref
-                if( variant1Iter->allele == 0 )
-                    node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
-                // this allele support alt
-                if( (*variant1Iter).allele == 1 )
-                    node->alt->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
-                
+                if(variant1Iter->homozygous == false || variant2Iter->homozygous == false){
+                    nextNode++;
+                    for(int nextNextNode = 0 ; nextNextNode < params->somaticConnectAdjacent && nextNode < params->somaticConnectAdjacent;){
+                        if( variant3Iter == readIter->second.variantVec.end() ){
+                            break;
+                        }
+                        if(variant3Iter->homozygous == false){
+                            nextNextNode++;
+                            node->addSegmentEdge((*variant1Iter), (*variant2Iter), (*variant3Iter));
+                        }
+                        variant3Iter++;
+                    }
+                }
+                if(addHomCount <= 6){
+                    // this allele support ref
+                    if( variant1Iter->allele == 0 )
+                        node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
+                    // this allele support alt
+                    if( (*variant1Iter).allele == 1 )
+                        node->alt->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
+                }
                 // next snp
                 variant2Iter++;
                 variant3Iter = std::next(variant2Iter,1);
@@ -745,6 +807,13 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
     std::map<int, VariantInfo>::iterator nextNextNodeIter;
 
     for(nodeIter = variantPosType->begin() ; nodeIter != variantPosType->end() ; nodeIter++ ){
+        auto variantIter = variants->find(nodeIter->first);
+        if(variantIter->second.germline){
+            nodeIter->second.origin = GERMLINE;
+        }
+        if (nodeIter->second.homozygous) {
+            continue;
+        }
         // check next position
         nextNodeIter = std::next(nodeIter, 1);
         if( nextNodeIter == variantPosType->end() ){
@@ -765,34 +834,37 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
         VariantEdge *edge = edgeIter->second;
 
         // check connect between surrent SNP and next n SNPs
-        for(int i = 0 ; i < params->somaticConnectAdjacent ; i++){
+        for(int i = 0 ; i < params->somaticConnectAdjacent;){
             if( nextNodeIter == variantPosType->end() ){
                 break;
             }
+            if (!nextNodeIter->second.homozygous) {
+                i++;
+                nextNextNodeIter = std::next(nextNodeIter, 1);
+                for(int j = 0 ; j < params->somaticConnectAdjacent;){
+                    if( nextNextNodeIter == variantPosType->end() ){
+                        break;
+                    }
+                    if (!nextNextNodeIter->second.homozygous) {
+                        j++;
 
-            nextNextNodeIter = std::next(nextNodeIter, 1);
-            for(int j = 0 ; j < params->somaticConnectAdjacent; j++){
-                if( nextNextNodeIter == variantPosType->end() ){
-                    break;
+                        ThreePointEdge threePointEdge = edge->findThreePointEdge(nextNodeIter->first,nextNextNodeIter->first);
+                        int voteTmp = patternMining(threePointEdge);
+                        
+                        if (voteTmp == LEFT_HIGH_SR || voteTmp == LEFT_HIGH_SA || voteTmp == LEFT_LOW){
+                            voteResult[nodeIter->first][voteTmp]++;
+                        } else if (voteTmp == RIGHT_HIGH_SR || voteTmp == RIGHT_HIGH_SA || voteTmp == RIGHT_LOW){
+                            voteResult[nextNextNodeIter->first][voteTmp]++;
+                        } else if (voteTmp == MID_HIGH_SR || voteTmp == MID_HIGH_SA || voteTmp == MID_LOW || voteTmp == DISAGREE){
+                            voteResult[nextNodeIter->first][voteTmp]++;
+                        }
+                    }
+                    nextNextNodeIter++;
                 }
-
-                ThreePointEdge threePointEdge = edge->findThreePointEdge(nextNodeIter->first,nextNextNodeIter->first);
-                int voteTmp = patternMining(threePointEdge);
-                
-                if (voteTmp == LEFT_HIGH_SR || voteTmp == LEFT_HIGH_SA || voteTmp == LEFT_LOW){
-                    voteResult[nodeIter->first][voteTmp]++;
-                } else if (voteTmp == RIGHT_HIGH_SR || voteTmp == RIGHT_HIGH_SA || voteTmp == RIGHT_LOW){
-                    voteResult[nextNextNodeIter->first][voteTmp]++;
-                } else if (voteTmp == MID_HIGH_SR || voteTmp == MID_HIGH_SA || voteTmp == MID_LOW || voteTmp == DISAGREE){
-                    voteResult[nextNodeIter->first][voteTmp]++;
-                }
-                nextNextNodeIter++;
             }
             nextNodeIter++;
         }
-        auto variantIter = variants->find(nodeIter->first);
-        if(variantIter->second.germline){
-            nodeIter->second.origin = GERMLINE;
+        if(nodeIter->second.origin == GERMLINE){
             continue;
         }
         auto voteResultIter = voteResult.find(nodeIter->first);
@@ -961,28 +1033,115 @@ void VairiantGraph::readCorrection(){
     delete hpAlleleCountMap;
 }
 
-void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult) {
-    for (auto &posPhasingResultIter : posPhasingResult) {
-        auto &result = posPhasingResultIter.second;
-        if (result.somatic) {
-            if(result.refHaplotype == HAPLOTYPE_UNDEFINED){
-                result.genotype = {"0|0", "1/1"};
-                result.phaseSet.push_back(-1);
+void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments) {
+    bool genomicEventChange = false;
+    int lastPhaseSet = -1;
+    int assignPhaseSet = -1;
+    Haplotype lastHP = HAPLOTYPE_UNDEFINED;
+    Haplotype connectedHP = HAPLOTYPE_UNDEFINED;
+    Allele nextConnectedAllele = Allele_UNDEFINED;
+    auto lohIter = LOHSegments.begin();
+    Allele connectedAllele = lohIter->startAllele;
+    if(connectedAllele != Allele_UNDEFINED){
+        connectedHP = (connectedAllele == REF_ALLELE) ? 
+                    (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) :
+                    lastHP;
+        // lastPhaseSet = lastPhaseSet;
+    }else{
+        lastPhaseSet = variantPosType->begin()->first;
+    }
+    nextConnectedAllele = lohIter->endAllele;
+
+
+    for(auto variantIter = variantPosType->begin() ; variantIter != variantPosType->end() ; variantIter++ ){
+        while(lohIter != LOHSegments.end() && variantIter->first > lohIter->end){
+            lohIter++;
+            genomicEventChange = true;
+            connectedHP = HAPLOTYPE_UNDEFINED;
+            nextConnectedAllele = Allele_UNDEFINED;
+            assignPhaseSet = -1;
+        }
+        bool inLOHRegion = (lohIter != LOHSegments.end() && variantIter->first >= lohIter->start && variantIter->first <= lohIter->end);
+        if(genomicEventChange && inLOHRegion){
+            genomicEventChange = false;
+            Allele connectedAllele = lohIter->startAllele;
+            if(connectedAllele != Allele_UNDEFINED){
+                connectedHP = (connectedAllele == REF_ALLELE) ? 
+                            (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) :
+                            lastHP;
+                // lastPhaseSet = lastPhaseSet;
+            }else{
+                lastPhaseSet = variantIter->first;
             }
-            else if(result.refHaplotype == HAPLOTYPE1){
-                result.genotype = {"0|0", ".|1"};
-                result.phaseSet.push_back(-1);
-            }
-            else if(result.refHaplotype == HAPLOTYPE2){
-                result.genotype = {"0|0", "1|."};
-                result.phaseSet.push_back(-1);
-            }
-        } else {
-            if(result.refHaplotype == HAPLOTYPE1){
-                result.genotype = {"0|1"};
-            }
-            else if(result.refHaplotype == HAPLOTYPE2){
-                result.genotype = {"1|0"};
+            nextConnectedAllele = lohIter->endAllele;
+        }
+        if(variantIter->second.homozygous && inLOHRegion && variantIter->second.origin != GERMLINE){
+            std::string genotype = (connectedHP == HAPLOTYPE1) ? ".|1" : "1|.";
+            PhasingResult phasingResult(lastPhaseSet, variantIter->second.type, genotype);
+            posPhasingResult.emplace(variantIter->first, phasingResult);
+        }else{
+            auto posPhasingResultIter = posPhasingResult.find(variantIter->first);
+            if(posPhasingResultIter != posPhasingResult.end()){
+                auto &result = posPhasingResultIter->second;
+                if(inLOHRegion){
+                    if(result.somatic){
+                        if(connectedHP == HAPLOTYPE1){
+                            switch(result.refHaplotype){
+                                case HAPLOTYPE_UNDEFINED:
+                                    result.genotype = {".|0", ".|1", ".|1"};
+                                    break;
+                                case HAPLOTYPE1:
+                                    result.genotype = {".|0", ".|0", ".|1"};
+                                    break;
+                                case HAPLOTYPE2:
+                                    result.genotype = {".|0", ".|1", ".|0"};
+                                    break;
+                            }
+                        }else{
+                            switch(result.refHaplotype){
+                                case HAPLOTYPE_UNDEFINED:
+                                    result.genotype = {"0|.", "1|.", "1|."};
+                                    break;
+                                case HAPLOTYPE1:
+                                    result.genotype = {"0|.", "0|.", "1|."};
+                                    break;
+                                case HAPLOTYPE2:
+                                    result.genotype = {"0|.", "1|.", "0|."};
+                                    break;
+                            }
+                        }
+                    }
+                }else{
+                    if(genomicEventChange){
+                        genomicEventChange = false;
+                        if(nextConnectedAllele != Allele_UNDEFINED){
+                            assignPhaseSet = result.refHaplotype;
+                        }
+                    }
+                    if (result.somatic) {
+                        if(result.refHaplotype == HAPLOTYPE_UNDEFINED){
+                            result.genotype = {"0|0", "1|1"};
+                        }
+                        else if(result.refHaplotype == HAPLOTYPE1){
+                            result.genotype = {"0|0", ".|1"};
+                        }
+                        else if(result.refHaplotype == HAPLOTYPE2){
+                            result.genotype = {"0|0", "1|."};
+                        }
+                    }else{
+                        if(result.refHaplotype == HAPLOTYPE1){
+                            result.genotype = {"0|1"};
+                        }
+                        else if(result.refHaplotype == HAPLOTYPE2){
+                            result.genotype = {"1|0"};
+                        }
+                    }
+                    if(assignPhaseSet == result.refHaplotype){
+                        result.phaseSet = {lastPhaseSet};
+                    }
+                    lastHP = result.refHaplotype;
+                    lastPhaseSet = result.phaseSet.front();
+                }
             }
         }
     }
@@ -1014,7 +1173,7 @@ int VairiantGraph::totalNode(){
     return variantPosType->size();
 }
 
-void VairiantGraph::phasingProcess(PosPhasingResult &inPosPhasingResult){
+void VairiantGraph::phasingProcess(PosPhasingResult &inPosPhasingResult, std::vector<LOHSegment> &LOHSegments){
     posPhasingResult = &inPosPhasingResult;
 
     // This step involves converting all reads into a graph structure, which will be stored as an edge list
@@ -1025,11 +1184,504 @@ void VairiantGraph::phasingProcess(PosPhasingResult &inPosPhasingResult){
     // read and recording this information in 'variantPosType.' Subsequently, it connects the coordinates contained 
     // in each read on the graph. Specifically, each coordinate is connected to the next N coordinates in a 
     // linear fashion.
-    this->edgeConnectResult();
+    this->edgeConnectResult(LOHSegments);
 
     // This step will utilize the results of graph phasing to attempt to separate all the reads into two 
     // haplotypes and then identify high-confidence SNPs using reads from the two distinct haplotypes.
     this->readCorrection();  
 }
 
+Roller::Roller() {}
 
+Roller::Roller(size_t windowSize) : window(windowSize) {}
+
+Roller::Roller(size_t windowSize, const std::vector<double>& input) : window(windowSize), values(input) {}
+
+Roller& Roller::setValues(const std::vector<double>& input) {
+    values = input;
+    return *this;
+}
+    
+Roller& Roller::smooth() {
+    values = smooth(values);
+    return *this;
+}
+    
+Roller& Roller::forward() {
+    values = forward(values);
+    return *this;
+}
+    
+Roller& Roller::reverse() {
+    values = reverse(values);
+    return *this;
+}
+    
+Roller& Roller::downSampling(int distance) {
+    values = downSampling(values, distance);
+    return *this;
+}
+    
+Roller& Roller::directionalDifference(size_t distance) {
+    values = directionalDifference(values, distance);
+    return *this;
+}
+    
+Roller& Roller::opposite() {
+    values = opposite(values);
+    return *this;
+}
+    
+Roller& Roller::reverseNetValues() {
+    values = reverseNetValues(values);
+    return *this;
+}
+
+// Get the final result
+std::vector<double> Roller::getResult() const {
+    return values;
+}
+
+std::vector<double> Roller::smooth(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    std::deque<double> windowValues;
+    double rollingSum = 0.0;
+    size_t halfWindow = window / 2;
+
+    // initialize the first window
+    for (size_t i = 0; i <= std::min(halfWindow, values.size() - 1); ++i) {
+        windowValues.push_back(values[i]);
+        rollingSum += values[i];
+    }
+    results[0] = (rollingSum / windowValues.size());
+    
+    // start to process the rest of the values
+    for (size_t i = 1; i < values.size(); ++i) {
+        updateWindow(rollingSum, windowValues, values[i]);
+        results[i] = (rollingSum / windowValues.size());
+    }
+
+    return results;
+}
+
+std::vector<double> Roller::forward(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    std::deque<double> windowValues;
+    double rollingSum = 0;
+
+    for (int i = values.size() - 1; i >= 0; --i) {
+        updateWindow(rollingSum, windowValues, values[i]);
+        results[i] = (double)rollingSum / window;
+    }
+    return results;
+}
+
+std::vector<double> Roller::reverse(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    std::deque<double> windowValues;
+    double rollingSum = 0;
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        updateWindow(rollingSum, windowValues, values[i]);
+        results[i] = (double)rollingSum / window;
+    }
+    return results;
+}
+
+std::vector<double> Roller::downSampling(const std::vector<double>& values, int distance) {
+    std::vector<double> results(values.size() / distance + 1);
+    for (size_t i = 0; i < values.size(); i+=distance) {
+        results[i / distance] = values[i];
+    }
+    return results;
+}
+
+std::vector<double> Roller::directionalDifference(const std::vector<double>& values, size_t distance) {
+    std::vector<double> results(values.size());
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        double forwardShift = (i + distance < values.size()) ? values[i + distance] : 0.0;
+        double backwardShift = (i >= distance) ? values[i - distance] : 0.0;
+        results[i] = forwardShift - backwardShift;
+    }
+    return results;
+}
+
+std::vector<double> Roller::opposite(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    for (size_t i = 0; i < values.size(); ++i) {
+        results[i] = -values[i];
+    }
+    return results;
+}
+
+std::vector<double> Roller::reverseNetValues(const std::vector<double>& values) {
+    std::vector<double> results(values.size());
+    results[0] = values[0];
+    for (size_t i = 1; i < values.size(); ++i) {
+        results[i] = values[i] - values[i-1];
+    }
+    return results;
+}
+
+std::vector<double> Roller::backValues(const std::vector<size_t>& idxs, const std::vector<double>& values) {
+    std::vector<double> results(idxs.size());
+    for (size_t i = 0; i < idxs.size(); ++i) {
+        results[i] = values[idxs[i]];
+    }
+    return results;
+}
+
+std::vector<int> Roller::backPosition(const std::vector<size_t>& idxs, const std::vector<int>& values) {
+    std::vector<int> results(idxs.size());
+    for (size_t i = 0; i < idxs.size(); ++i) {
+        results[i] = values[idxs[i]];
+    }
+    return results;
+}
+
+void Roller::replaceValue(ClipCount &clipCount, std::vector<int>& keys, std::vector<size_t>& idxs, std::vector<double>& replaceValues) {
+    for (size_t i = 0; i < idxs.size(); ++i) {
+        if(replaceValues[i] > 0){
+            clipCount[keys[idxs[i]]][FRONT] = replaceValues[i];
+        }
+        else{
+            clipCount[keys[idxs[i]]][BACK] = -replaceValues[i];
+        }
+    }
+}
+
+void Roller::updateWindow(double& rollingSum, std::deque<double>& windowValues, double newValue) {
+    // add the new value
+    rollingSum += newValue;
+    windowValues.push_back(newValue);
+    // remove the old value
+    if (windowValues.size() > window) {
+        rollingSum -= windowValues.front();
+        windowValues.pop_front();
+    }
+}
+
+// PeakFinder Implementation
+PointFinder::PointFinder(size_t peakDistance, int calibrationThreshold, size_t calibrationDistance)
+    : peakDistance(peakDistance), calibrationThreshold(calibrationThreshold) {
+    this->calibrationDistance = (calibrationDistance == 0) ? peakDistance * 2 : calibrationDistance;
+}
+
+std::vector<size_t> PointFinder::findAllPeaks(const std::vector<double>& values, double peakThreshold) {
+    std::vector<size_t> peaks;
+    bool isPeak = true;
+    for (size_t i = 1; i < values.size() - 1; ++i) {
+        isPeak = true;
+        if (values[i] >= peakThreshold) {
+            size_t start = this->start(i, peakDistance, 2);
+            size_t end = this->end(i, peakDistance, values.size() - 1, 2);
+            for (size_t j = start; j <= end; ++j) {
+                if (values[j] > values[i]){
+                    isPeak = false;
+                    break;
+                }
+            }
+            if (isPeak){
+                peaks.push_back(i);
+            }
+        }
+    }
+    return peaks;
+}
+
+std::vector<size_t> PointFinder::findPeaks(const std::vector<double>& values, double peakThreshold) {
+    std::vector<size_t> peakKeys;
+    if (values.empty()){
+        return peakKeys;
+    }
+    size_t valuesEnd = values.size() - 1;
+
+    for (size_t i = 1; i < valuesEnd; ++i) {
+        if (values[i] >= peakThreshold) {
+            size_t start = this->start(i, peakDistance, 2);
+            size_t end = this->end(i, peakDistance, valuesEnd, 2);
+            double start_value = start == 0 ? 0 : values[start];
+            double end_value = end == valuesEnd ? 0 : values[end];
+            if (values[i] >= start_value && values[i] >= end_value) {
+                if (!peakKeys.empty() && i - peakKeys.back() < peakDistance){
+                    if (values[i] > values[peakKeys.back()]){
+                        peakKeys.back() = i;
+                    }
+                }
+                else{
+                    peakKeys.push_back(i);
+                }
+            }
+        }
+    }
+    return peakKeys;
+}
+
+std::vector<size_t> PointFinder::getForwardGentle(const std::vector<double>& values, std::vector<size_t> peaks) {
+    std::vector<size_t> gentlePeaks;
+    for (size_t& peak : peaks) {
+        bool isGentle = true;
+        size_t end = this->end(peak, calibrationDistance, values.size());
+        for (size_t j = peak; j < end; ++j) {
+            if (values[j + 1] >= calibrationThreshold) {
+                isGentle = false;
+                break;
+            }
+        }
+        if (isGentle){
+            gentlePeaks.push_back(peak);
+        }
+    }
+    return gentlePeaks;
+}
+
+std::vector<size_t> PointFinder::getReverseGentle(const std::vector<double>& values, std::vector<size_t> peaks) {
+    std::vector<size_t> gentlePeaks;
+    for (size_t& peak : peaks) {
+        bool isGentle = true;
+        size_t start = this->start(peak, calibrationDistance);
+        for (size_t j = peak; j > start; --j) {
+            if (values[j - 1] <= -calibrationThreshold) {
+                isGentle = false;
+                break;
+            }
+        }
+        if (isGentle){
+            gentlePeaks.push_back(peak);
+        }
+    }
+    return gentlePeaks;
+}
+
+size_t PointFinder::start(size_t target, size_t distance, size_t distanceDivisor) {
+    return (target > distance) ? target - (distance / distanceDivisor) : 0;
+}
+
+size_t PointFinder::end(size_t target, size_t distance, size_t size, size_t distanceDivisor) {
+    return std::min(target + (distance / distanceDivisor), size);
+}
+
+Clip::Clip(std::string &chr){
+    this->chr = chr;
+    this->largeGenomicEventInterval = nullptr;
+    this->smallGenomicEventRegion = nullptr;
+}
+
+Clip::~Clip(){
+}
+
+void Clip::detectGenomicEventInterval(ClipCount &clipCount, std::vector<int> &largeGenomicEventInterval, std::vector<std::pair<int, int>> &smallGenomicEventRegion){
+    this->largeGenomicEventInterval = &largeGenomicEventInterval;
+    this->smallGenomicEventRegion = &smallGenomicEventRegion;
+    // Check if there are any clip counts to process
+    if (clipCount.size() > 0){
+        // Aggregate gentle clip values into a consolidated point
+        this->amplifyGentleClip(clipCount);
+        // Calculate and store the genomic event intervals, including both large and small event regions
+        this->detectInterval(clipCount);
+    }
+}
+
+void Clip::amplifyGentleClip(ClipCount &clipCount){
+    size_t window = 100;
+    size_t clipCountSize = clipCount.size();
+    if (clipCountSize <= window) return;
+    std::vector<int> positions(clipCountSize);
+    std::vector<double> netValues(clipCountSize);
+    std::vector<double> cumulativeSum(clipCountSize);
+
+    int totalNetValue = 0;
+    size_t i = 0;
+    for (auto& clipIter : clipCount) {
+        auto& counts = clipIter.second;
+        int netValue = counts[FRONT] - counts[BACK];
+        totalNetValue += netValue;
+        positions[i] = clipIter.first;
+        netValues[i] = netValue;
+        cumulativeSum[i] = totalNetValue;
+        i++;
+    }
+
+    std::vector<double> directionalDifference = Roller(window, cumulativeSum).smooth().directionalDifference().getResult();
+    std::vector<double> smoothedForwardSum = Roller(window, netValues).forward().forward().getResult();
+    std::vector<double> smoothedReverseOppositeSum = Roller(window, netValues).reverse().reverse().opposite().getResult();
+
+    PointFinder pointFinder(window);
+    std::vector<size_t> forwardPeaksIndex = pointFinder.findPeaks(smoothedForwardSum, 0.25);
+    std::vector<size_t> reversePeaksIndex = pointFinder.findPeaks(smoothedReverseOppositeSum, 0.25);
+    std::vector<size_t> gentleRiseIndex = pointFinder.getForwardGentle(netValues, forwardPeaksIndex);
+    std::vector<size_t> gentleFallIndex = pointFinder.getReverseGentle(netValues, reversePeaksIndex);
+
+    Roller::replaceValue(clipCount, positions, gentleRiseIndex, directionalDifference);
+    Roller::replaceValue(clipCount, positions, gentleFallIndex, directionalDifference);
+}
+
+void Clip::detectInterval(ClipCount &clipCount){
+    int upCount = 0;
+    int downCount = 0;
+    int smallRegion = 10000;
+    int lastPos = -smallRegion;
+
+    bool convert = 0;
+    bool push = 0;
+    bool status = clipCount.begin()->second[FRONT] > clipCount.begin()->second[BACK]; // 1: up, 0: down
+    int candidatePos = -1;
+    int candidateCount = 0;
+
+    int rejectCount = 0;
+    int lastRejectPos = -1;
+
+    bool artificialStatus = false;
+    int artificialCount = 0;
+    int artificialPos = -1;
+
+    clipCount[clipCount.rbegin()->first + smallRegion] = clipCount.rbegin()->second;
+
+    for(auto posIter = clipCount.begin(); posIter != clipCount.end() ; posIter++ ){
+        upCount = posIter->second[FRONT];
+        downCount = posIter->second[BACK];
+        if (posIter->first - lastPos >= smallRegion) {
+            if (candidatePos != -1 && push) {
+                largeGenomicEventInterval->push_back(candidatePos);
+                candidatePos = -1;
+            }else if (candidatePos != -1 && !push){
+                smallGenomicEventRegion->push_back(candidatePos > lastRejectPos ? std::make_pair(lastRejectPos, candidatePos) : std::make_pair(candidatePos, lastRejectPos));
+                candidatePos = -1;
+            }
+            convert = 0;
+            lastRejectPos = -1;
+        }
+
+        if (upCount >= 5 || downCount >= 5) {
+            if (candidatePos == -1) {
+                candidatePos = posIter->first;
+                status = posIter->second[FRONT] > posIter->second[BACK];
+                candidateCount = status ? upCount : downCount;
+                rejectCount = candidateCount / 4;
+                push = 1;
+                if (status != artificialStatus && artificialCount > rejectCount && candidatePos - artificialPos < 10000) {
+                    push = 0;
+                    lastRejectPos = artificialPos;
+                }
+            }
+            else {
+                if (!convert){
+                    if (status && downCount >= rejectCount) {
+                        status = 0;
+                        convert = 1;
+                        push = 0;
+                        lastRejectPos = posIter->first;
+                    }
+                    else if (!status && upCount >= rejectCount) {
+                        status = 1;
+                        convert = 1;
+                        push = 0;
+                        lastRejectPos = posIter->first;
+                    }
+                    else {
+                        candidateCount = std::max(candidateCount, status ? upCount : downCount);
+                        rejectCount = candidateCount / 4;
+                        if (!push && rejectCount > artificialCount ){
+                            push = 0;
+                            candidatePos = posIter->first;
+                        }
+                        if (!status){
+                            candidatePos = posIter->first;
+                        }
+                    }
+                }
+                else {
+                    lastRejectPos = posIter->first;
+                }
+            }
+            lastPos = posIter->first;
+        }
+        else {
+            if (artificialPos == -1) {
+                artificialPos = posIter->first;
+                artificialCount = std::max(upCount, downCount);
+                artificialStatus = (upCount > downCount);
+            }
+            else {
+                int newMax = std::max(upCount, downCount);
+                if (newMax >= artificialCount || posIter->first - artificialPos > smallRegion) {
+                    artificialStatus = (upCount > downCount);
+                    if (push){
+                        if (status != artificialStatus){
+                            artificialCount = newMax;
+                        }
+                    }
+                    else {
+                        artificialCount = newMax;
+                    }
+                    if (push && candidatePos - posIter->first < smallRegion && status != artificialStatus && candidatePos != -1 && artificialCount > rejectCount) {
+                        push = 0;
+                        lastRejectPos = posIter->first;
+                    }
+                    else if (!push && posIter->first - candidatePos < std::abs(artificialPos - candidatePos)){
+                        lastRejectPos = posIter->first;
+                    }
+                    artificialPos = posIter->first;
+                }
+            }
+        }
+    }
+    clipCount.erase(--clipCount.end());
+    if(!largeGenomicEventInterval->empty() && largeGenomicEventInterval->front() != clipCount.begin()->first){
+        largeGenomicEventInterval->insert(largeGenomicEventInterval->begin(), clipCount.begin()->first);
+    }
+    if(!largeGenomicEventInterval->empty() && largeGenomicEventInterval->back() != clipCount.rbegin()->first){
+        largeGenomicEventInterval->push_back(clipCount.rbegin()->first);
+    }
+}
+
+void Clip::detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegments){
+    std::map<int, RefAlt> *currentVariants = snpMap.getVariants(chr);
+
+    bool currLOH = false;
+    int startPos = -1;
+    int hetCountNum = 0;
+    int homCountNum = 0;
+    auto intervalIter = largeGenomicEventInterval->begin();
+    auto regionIter = smallGenomicEventRegion->begin();
+
+    for (auto posIter = currentVariants->begin(); posIter != currentVariants->end(); ++posIter) {
+        if (posIter->first >= *intervalIter) {
+            double genotypeRatio = (hetCountNum + homCountNum > 0) ? static_cast<double>(hetCountNum) / (homCountNum + hetCountNum) : 0.0;
+            if (hetCountNum + homCountNum > 0){
+                if (genotypeRatio >= 0.09 && currLOH){
+                    startPos = *intervalIter;
+                    currLOH = !currLOH;
+                }else if (genotypeRatio < 0.09 && !currLOH){
+                    LOHSegments.push_back(LOHSegment(startPos, *intervalIter));
+                    currLOH = !currLOH;
+                }
+            }
+            
+            // reset count
+            homCountNum = 0;
+            hetCountNum = 0;
+            // move to next interval
+            while (intervalIter != largeGenomicEventInterval->end() && posIter->first >= *intervalIter) {
+                intervalIter++;
+            }
+            if (intervalIter == largeGenomicEventInterval->end()){
+                break;
+            }
+        }
+        while (regionIter != smallGenomicEventRegion->end() - 1 && posIter->first > regionIter->second){
+            regionIter++;
+        }
+        if (posIter->first > regionIter->first || posIter->first < regionIter->second){
+            if (posIter->second.vaf >= 0.8 || posIter->second.homozygous){
+                homCountNum++;
+            }else {
+                hetCountNum++;
+            }
+        }
+    }
+    if (!LOHSegments.empty() && LOHSegments.back().start != startPos){
+        LOHSegments.push_back(LOHSegment(startPos, *(largeGenomicEventInterval->rbegin())));
+    }
+}

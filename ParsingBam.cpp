@@ -358,7 +358,7 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
         // check exists in PhasingResult and the type is from the parser
         if(posPhasingResultIter != posPhasingResult.end() && checkType(posPhasingResultIter->second.type)){
             phasingResultPtr = &posPhasingResultIter->second;
-            phasedCount = phasingResultPtr->phaseSet.size();
+            phasedCount = phasingResultPtr->genotype.size();
             haplotypeIter = phasingResultPtr->genotype.begin();
         }
 
@@ -434,6 +434,14 @@ SnpParser::SnpParser(PhasingParameters &in_params){
         std::cout << "error or a positive integer if the list contains samples not present in the VCF header\n";
     }
 
+    // deepvariant use VAF
+    // clair3 use AF
+    const char* vafTagName = "AF";
+    int tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, vafTagName);
+    if (!bcf_hdr_idinfo_exists(hdr, BCF_HL_FMT, tag_id)) {
+        vafTagName = "VAF";
+    }
+
     // struct for storing each record
     bcf1_t *rec = bcf_init();
 
@@ -441,10 +449,11 @@ SnpParser::SnpParser(PhasingParameters &in_params){
         // snp or indel
         if (bcf_is_snp(rec) || parserIndel) {
             VariantGenotype parserType = confirmRequiredGT(hdr, rec, "GT", rec->pos);
+            float vaf = getVAF(hdr, rec, vafTagName, rec->pos);
             if ( parserType != GENOTYPE_UNDEFINED ) {
                 // get chromosome string
                 std::string chr = seqnames[rec->rid];
-                recordVariant(chr, rec, chrVariant);
+                recordVariant(chr, rec, vaf, parserType, chrVariant);
             }
         }
     }
@@ -720,30 +729,41 @@ VariantGenotype SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line,
     int checkTag = bcf_get_format_int32(hdr, line, tag, &gt, &ngt_arr);
     fetchAndValidateTag(checkTag, tag, pos);
     
-    // hetero SNP
+    // heterozygous SNP
     if ((gt[0] == 2 && gt[1] == 4) || (gt[0] == 4 && gt[1] == 2) || // 0/1, 1/0
         (gt[0] == 2 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 3) || // 0|1, 1|0
         (gt[0] == 0 && gt[1] == 3) || (gt[0] == 2 && gt[1] == 1)) { // .|0, 0|.
         return HET;
     }
-    // // homo SNP
-    // else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
-    //          (gt[0] == 4 && gt[1] == 5) || // 1|1
-    //          (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1)) { // .|1, 1|.
-    //     return HOM;
-    // }
+    // homozygous SNP
+    else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
+             (gt[0] == 4 && gt[1] == 5) || // 1|1
+             (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1)) { // .|1, 1|.
+        return HOM;
+    }
     else {
         return GENOTYPE_UNDEFINED;
     }
 }
 
-void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, std::map<std::string, std::map<int, RefAlt> > *chrVariant) {
+float SnpParser::getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos){
+    
+    int nvaf_arr = 0;
+    float *vaf = nullptr;
+    int checkTag = bcf_get_format_float(hdr, line, tag, &vaf, &nvaf_arr);
+    fetchAndValidateTag(checkTag, tag, pos);
+    return vaf[0];
+}
+
+void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, float vaf, VariantGenotype parserType, std::map<std::string, std::map<int, RefAlt> > *chrVariant) {
     // position is 0-base
     int variantPos = rec->pos;
     // get r alleles
     RefAlt tmp;
     tmp.Ref = rec->d.allele[0];
     tmp.Alt = rec->d.allele[1];
+    tmp.homozygous = parserType;
+    tmp.vaf = vaf;
     
     //prevent the MAVs calling error which makes the GT=0/1
     if ( rec->d.allele[1][tmp.Alt.size()+1] != '\0' ){
@@ -847,6 +867,13 @@ bool SnpParser::findSNP(std::string chr, int position){
     // empty position
     if( posIter == chrIter->second.end() )
         return false;
+
+    // If the variant is homozygous (homozygous is true), remove the SNP at this position from chrVariant 
+    // and prioritize other variants.
+    if (posIter->second.homozygous == true){
+        (*chrVariant)[chr].erase(posIter);
+        return false;
+    }
         
     return true;
 }
@@ -890,9 +917,18 @@ void SnpParser::filterSNP(std::string chr, std::vector<ReadVariant> &readVariant
             consecutiveAllele[(*posIter).first] = homopolymerLength((*posIter).first, chr_reference);
         }
         std::map<int, RefAlt>::iterator currSNPIter = (*chrIter).second.begin();
+        //skip homozygous SNP
+        while( currSNPIter != (*chrIter).second.end() && currSNPIter->second.homozygous == true ){
+            currSNPIter++;
+        }
         std::map<int, RefAlt>::iterator nextSNPIter = std::next(currSNPIter,1);
         // check whether each SNP pair falls in an area that is not easy to phasing
         while( currSNPIter != (*chrIter).second.end() && nextSNPIter != (*chrIter).second.end() ){
+            //skip homozygous SNP
+            if (nextSNPIter->second.homozygous == true){
+                nextSNPIter++;
+                continue;
+            }
             int currPos = (*currSNPIter).first;
             int nextPos = (*nextSNPIter).first;
             // filter one of SNP if this SNP pair falls in homopolymer and distance<=2
@@ -902,7 +938,7 @@ void SnpParser::filterSNP(std::string chr, std::vector<ReadVariant> &readVariant
                 continue;
             }
             
-            currSNPIter++;
+            currSNPIter = nextSNPIter;
             nextSNPIter++;
         }
         
@@ -1108,7 +1144,7 @@ BamParser::~BamParser(){
     delete currentMod;
 }
 
-void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool, PhasingParameters params, std::vector<ReadVariant> &readVariantVec, const std::string &ref_string){
+void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool, PhasingParameters params, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string){
     
     // record SNP start iter
     std::map<int, RefAlt>::iterator tmpFirstVariantIter = firstVariantIter;
@@ -1158,7 +1194,7 @@ void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool,
                 continue;
             }
 
-            get_snp(*bamHdr,*aln,readVariantVec, ref_string, params.isONT, params.mismatchRate);
+            get_snp(*bamHdr,*aln,readVariantVec, clipCount, ref_string, params.isONT, params.mismatchRate);
         }
         hts_idx_destroy(idx);
         bam_hdr_destroy(bamHdr);
@@ -1168,7 +1204,7 @@ void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool,
     
 }
 
-void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, const std::string &ref_string, bool isONT, double mismatchRate){
+void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, bool isONT, double mismatchRate){
 
     ReadVariant *tmpReadResult = new ReadVariant();
     (*tmpReadResult).read_name = bam_get_qname(&aln);
@@ -1358,7 +1394,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
             
                     if( allele != -1 ){
                         // record snp result
-                        Variant *tmpVariant = new Variant(variantPos, allele, base_q);
+                        Variant *tmpVariant = new Variant(variantPos, allele, base_q, currentVariantIter->second.homozygous);
                         (*tmpReadResult).variantVec.push_back( (*tmpVariant) );
                         delete tmpVariant;                        
                     }
@@ -1367,6 +1403,13 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                 }
                 else break;
             }
+        }
+        // Exclude the case where, in a homopolymer deletion, a hom variant position 
+        // that is less than the het variant position prevents the het variant from being pushed.
+        while( currentVariantIter != currentVariants->end() && 
+               (*currentVariantIter).second.homozygous == true && 
+               (*currentVariantIter).first < ref_pos + cigar_oplen) {
+            currentVariantIter++;
         }
         
         // Preparing to process the next CIGAR operator.
@@ -1468,11 +1511,13 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
             query_pos += cigar_oplen;
             cigar_clip_oplen += cigar_oplen;
             cigar_total_oplen += cigar_oplen;
+            getClip(ref_pos, i, cigar_oplen, clipCount);
         }
         // 5: hard clipping (clipped sequences NOT present in SEQ)
         else if( cigar_op == 5 ){
             cigar_clip_oplen += cigar_oplen;
             cigar_total_oplen += cigar_oplen;
+            getClip(ref_pos, i, cigar_oplen, clipCount);
         }
         // 6: padding (silent deletion from padded reference)
         else if(cigar_op == 6 ){
@@ -1502,6 +1547,21 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
     //std::cout<< "readname: " << bam_get_qname(&aln) << "\tnm_value: " << nm_value << "\tcigar_total_oplen: " << cigar_total_oplen << "\tcigar_clip_oplen: " << cigar_clip_oplen << "\tcigar_indel_oplen: " << cigar_indel_oplen << "\tmm_rate: " << mm_rate << "\n";
     //std::cout << bamHdr.target_name[aln.core.tid] << "\treadname: " << bam_get_qname(&aln) << "\t" << mmrate << "\n";
     delete tmpReadResult;
+}
+
+void BamParser::getClip(int pos, int clipFrontBack, int len, ClipCount &clipCount){
+    if (len > 5){
+        // Initialize clipCount[pos] if it doesn't exist
+        if (clipCount.find(pos) == clipCount.end()) {
+            clipCount[pos] = {0, 0};
+        }
+        if (clipFrontBack == FRONT){
+            clipCount[pos][FRONT]++;
+        }
+        else {
+            clipCount[pos][BACK]++;
+        }
+    }
 }
 
 METHParser::METHParser(PhasingParameters &in_params, SnpParser &in_snpFile, SVParser &in_svFile){

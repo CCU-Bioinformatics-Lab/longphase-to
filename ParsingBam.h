@@ -16,10 +16,12 @@
 struct RefAlt{
     std::string Ref;
     std::string Alt;
+    float vaf;
     bool is_reverse;
     bool is_modify;
     bool is_danger;
     bool germline = false;
+    bool homozygous;
 };
 
 class FastaParser{
@@ -131,8 +133,8 @@ class SnpParser : public BaseVairantParser{
 
         void fetchAndValidateTag(const int checkTag, const char *tag, hts_pos_t pos);
         VariantGenotype confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
-        void recordVariant(std::string &chr, bcf1_t *rec, std::map<std::string, std::map<int, RefAlt> > *chrVariant);
-        std::vector<std::string> splitString(const std::string &input);
+        float getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
+        void recordVariant(std::string &chr, bcf1_t *rec, float vaf, VariantGenotype parserType, std::map<std::string, std::map<int, RefAlt> > *chrVariant);        std::vector<std::string> splitString(const std::string &input);
         void validateHeader(const std::vector<std::string>& fields);
         std::array<std::string, 5> splitFieldsToArray(const char* ptr, size_t inputSize);
         std::vector<std::string> splitFieldsToVector(const char* ptr, size_t inputSize);
@@ -250,13 +252,14 @@ class BamParser{
         // mod map and iter
         std::map<int, std::map<std::string ,RefAlt> > *currentMod;
         std::map<int, std::map<std::string ,RefAlt> >::iterator firstModIter;
-        void get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, const std::string &ref_string, bool isONT, double mismatchRate);
+        void get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, bool isONT, double mismatchRate);
+        void getClip(int pos, int clipFrontBack, int len, ClipCount &clipCount);
    
     public:
         BamParser(std::string chrName, std::vector<std::string> inputBamFileVec, SnpParser &snpMap, SVParser &svFile, METHParser &modFile, const std::string &ref_string);
         ~BamParser();
         
-        void direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool, PhasingParameters params, std::vector<ReadVariant> &readVariantVec , const std::string &ref_string);
+        void direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool, PhasingParameters params, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string);
 
 };
 

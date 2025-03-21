@@ -125,7 +125,7 @@ struct VoteResult{
 
 struct VariantInfo {
     VariantType type;
-    // bool homozygous; // 0 heterozygous 1 homozygous
+    bool homozygous; // 0 heterozygous 1 homozygous
     VariantOriginType origin = ORIGIN_UNDEFINED; // 0 germline 1 somatic -1 unknown
 };
 
@@ -192,7 +192,7 @@ class VairiantGraph{
         
         void readCorrection();
 
-        void edgeConnectResult();
+        void edgeConnectResult(std::vector<LOHSegment> &LOHSegments);
 
         int patternMining(ThreePointEdge threePointEdge);
         
@@ -205,9 +205,9 @@ class VairiantGraph{
     
         void addEdge(std::vector<ReadVariant> &in_readVariant);
         
-        void phasingProcess(PosPhasingResult &posPhasingResult);
+        void phasingProcess(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments);
 
-        void exportPhasingResult(PosPhasingResult &posPhasingResult);
+        void exportPhasingResult(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments);
 
         void somaticCalling(std::map<int, RefAlt>* variants);
         
@@ -219,7 +219,71 @@ class VairiantGraph{
         
 };
 
+class Roller {
+public:
+    Roller();
+    Roller(size_t windowSize);
+    Roller(size_t windowSize, const std::vector<double>& input);
+    
+    Roller& setValues(const std::vector<double>& input);
+    Roller& smooth();
+    Roller& forward();
+    Roller& reverse();
+    Roller& downSampling(int distance);
+    Roller& directionalDifference(size_t distance = 10);
+    Roller& opposite();
+    Roller& reverseNetValues();
+    // Get the final result
+    std::vector<double> getResult() const;
+    
+    std::vector<double> smooth(const std::vector<double>& values);
+    std::vector<double> forward(const std::vector<double>& values);
+    std::vector<double> reverse(const std::vector<double>& values);
+    std::vector<double> downSampling(const std::vector<double>& values, int distance);
+    std::vector<double> directionalDifference(const std::vector<double>& values, size_t distance = 10);
+    std::vector<double> opposite(const std::vector<double>& values);
+    std::vector<double> reverseNetValues(const std::vector<double>& values);
 
+    static std::vector<double> backValues(const std::vector<size_t>& idxs, const std::vector<double>& values);
+    static std::vector<int> backPosition(const std::vector<size_t>& idxs, const std::vector<int>& values);
+    static void replaceValue(ClipCount &clipCount, std::vector<int>& keys, std::vector<size_t>& idxs, std::vector<double>& replaceValues);
 
+private:
+    size_t window;
+    std::vector<double> values;
+    void updateWindow(double& rollingSum, std::deque<double>& windowValues, double newValue);
+};
+
+class PointFinder {
+public:
+    PointFinder(size_t peakDistance, int calibrationThreshold = 5, size_t calibrationDistance = 0);
+    
+    std::vector<size_t> findAllPeaks(const std::vector<double>& values, double peakThreshold = 0);
+    std::vector<size_t> findPeaks(const std::vector<double>& values, double peakThreshold = 0);
+    std::vector<size_t> getForwardGentle(const std::vector<double>& values, std::vector<size_t> peaks);
+    std::vector<size_t> getReverseGentle(const std::vector<double>& values, std::vector<size_t> peaks);
+
+private:
+    size_t peakDistance;
+    int calibrationThreshold;
+    size_t calibrationDistance;
+
+    size_t start(size_t target, size_t distance, size_t distanceDivisor = 1);
+    size_t end(size_t target, size_t distance, size_t size, size_t distanceDivisor = 1);
+};
+
+class Clip{
+    private:
+        std::string chr;
+        std::vector<int> *largeGenomicEventInterval;
+        std::vector<std::pair<int, int>> *smallGenomicEventRegion;
+        void amplifyGentleClip(ClipCount &clipCount);
+        void detectInterval(ClipCount &clipCount);
+    public:
+        Clip(std::string &chr);
+        ~Clip();
+        void detectGenomicEventInterval(ClipCount &clipCount, std::vector<int> &largeGenomicEventInterval, std::vector<std::pair<int, int>> &smallGenomicEventRegion);
+        void detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegments);
+};
 
 #endif
