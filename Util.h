@@ -48,7 +48,7 @@ enum ClipFrontBack {
     BACK = 1
 };
 
-constexpr size_t PHASING_RESULT_SIZE = 2;
+constexpr size_t PHASING_RESULT_SIZE = 3;
 struct PhasingResult {
     Haplotype refHaplotype = HAPLOTYPE_UNDEFINED;
     std::vector<int> phaseSet;

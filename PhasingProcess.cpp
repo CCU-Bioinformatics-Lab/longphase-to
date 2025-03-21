@@ -165,8 +165,8 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     
     // Transfer phasing results from chrInfoMap to chrPhasingResult
     ChrPhasingResult chrPhasingResult;
-    for (const auto& chrIter : chrName) {
-        chrPhasingResult[chrIter] = chrInfoMap[chrIter].posPhasingResult;
+    for (const auto& chrInfo : chrInfoMap) {
+        chrPhasingResult[chrInfo.first] = chrInfo.second.posPhasingResult;
     }
 
     std::cerr<< "\nparsing total:  " << difftime(time(NULL), begin) << "s\n";
