@@ -13,6 +13,7 @@
 #include <vector>
 #include <omp.h>
 #include <deque>
+#include <cmath>
 
 enum Haplotype {
     HAPLOTYPE_UNDEFINED = -1,
@@ -81,12 +82,15 @@ struct LOHSegment{
     LOHSegment(int inStart, int inEnd): 
         start(inStart), end(inEnd), startAllele(Allele_UNDEFINED), endAllele(Allele_UNDEFINED){}
 };
+class VairiantGraph;
 struct ChrInfo{
     PosPhasingResult posPhasingResult = PosPhasingResult();
     ClipCount clipCount = ClipCount();
     std::vector<int> largeGenomicEventInterval = std::vector<int>();
     std::vector<std::pair<int, int>> smallGenomicEventRegion = std::vector<std::pair<int, int>>();
     std::vector<LOHSegment> LOHSegments = std::vector<LOHSegment>();
+    VairiantGraph *vGraph = nullptr;
+    std::map<double, int> ploidyRatioMap = std::map<double, int>();
 };
 typedef std::map<std::string, std::map<int, PhasingResult>> ChrPhasingResult;
 

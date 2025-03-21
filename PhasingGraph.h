@@ -187,10 +187,22 @@ class VairiantGraph{
         // store phased read and read's haplotype
         std::map<std::string,int> *readHpMap;
 
+        // Map to store distribution statistics
+        std::map<double, int> *ploidyRatioMap;
+
+        // Process read variants to determine haplotype and update allele counts
+        void processReadVariants(std::map<int,std::map<int,std::map<double,double>>> *hpAlleleCountMap);
+
+        // Calculate reference allele distribution
+        void calculatePloidyRatio(double hp1Ref, double hp2Ref, std::map<double, int> *ploidyRatioMap);
+
+        // Reassign allele results based on haplotype counts
+        void reassignAlleleResult(std::map<int,std::map<int,std::map<double,double>>> *hpAlleleCountMap, std::map<double, int> *ploidyRatioMap);
+
         // produce PS tag and determine phased GT tag
         void storeResultPath();
         
-        void readCorrection();
+        void readCorrection(std::map<double, int> *ploidyRatioMap);
 
         void edgeConnectResult(std::vector<LOHSegment> &LOHSegments);
 
@@ -203,9 +215,11 @@ class VairiantGraph{
         VairiantGraph(std::string &ref, PhasingParameters &params, std::string &chr);
         ~VairiantGraph();
     
-        void addEdge(std::vector<ReadVariant> &in_readVariant);
+        void addEdge(std::vector<ReadVariant> *in_readVariant);
         
-        void phasingProcess(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments);
+        void phasingProcess(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments, std::map<double, int> *ploidyRatioMap);
+
+        void convertNonGermlineToSomatic();
 
         void exportPhasingResult(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments);
 
@@ -284,6 +298,15 @@ class Clip{
         ~Clip();
         void detectGenomicEventInterval(ClipCount &clipCount, std::vector<int> &largeGenomicEventInterval, std::vector<std::pair<int, int>> &smallGenomicEventRegion);
         void detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegments);
+};
+
+class PurityCalculator {
+    private:
+        static std::map<double, int> mergeDistributionMap(const std::map<std::string, std::map<double, int>>& data);
+        static int getTotalCount(const std::map<double, int>& data);
+        static double findQuartile(const std::map<double, int>& data, double targetPos);
+    public:
+        static double getPurity(std::map<std::string, std::map<double, int>> &inChrDistributionMap, std::string &output_root_path);
 };
 
 #endif

@@ -586,6 +586,10 @@ VairiantGraph::~VairiantGraph(){
 void VairiantGraph::destroy(){
     dotResult.clear();
     dotResult.shrink_to_fit();
+    if(readVariant != nullptr){
+        delete readVariant;
+        readVariant = nullptr;
+    }
 
     for( auto edgeIter = edgeList->begin() ; edgeIter != edgeList->end() ; edgeIter++ ){
         edgeIter->second->ref->destroy();
@@ -601,9 +605,8 @@ void VairiantGraph::destroy(){
     delete readHpMap;
 }
     
-void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
-
-    readVariant = &in_readVariant;
+void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
+    readVariant = in_readVariant;
     std::map<std::string,ReadVariant> mergeReadMap;
 
     // each read will record fist and list variant posistion
@@ -614,10 +617,10 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
     std::vector<int> delReadIdx;
 
     // Check for overlaps among different alignments of a read and filter out the shorter overlapping alignments.
-    for(int readIter = 0 ; readIter < (int)in_readVariant.size() ; readIter++ ){
-        std::string readName = in_readVariant[readIter].read_name;
-        int firstVariantPos = in_readVariant[readIter].variantVec[0].position;
-        int lastVariantPos  = in_readVariant[readIter].variantVec[in_readVariant[readIter].variantVec.size()-1].position;
+    for(int readIter = 0 ; readIter < (int)in_readVariant->size() ; readIter++ ){
+        std::string readName = (*in_readVariant)[readIter].read_name;
+        int firstVariantPos = (*in_readVariant)[readIter].variantVec[0].position;
+        int lastVariantPos  = (*in_readVariant)[readIter].variantVec[(*in_readVariant)[readIter].variantVec.size()-1].position;
         
         auto rangeIter = alignRange.find(readName);
         // this read name appears for the first time
@@ -671,19 +674,19 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> &in_readVariant){
     // sort read index
     std::sort(delReadIdx.begin(), delReadIdx.end());
     // remove overlap alignment
-    delReadIdx.push_back((int)in_readVariant.size());
+    delReadIdx.push_back((int)in_readVariant->size());
     int saveIter = *(delReadIdx.begin());
     for (auto delIter = delReadIdx.begin(), nextdelIter = std::next(delReadIdx.begin(), 1); nextdelIter != delReadIdx.end(); delIter++ , nextdelIter++) {
         auto nowDelIter = *delIter+1;
         while (nowDelIter<*nextdelIter){
-            in_readVariant[saveIter++]=in_readVariant[nowDelIter++];
+            (*in_readVariant)[saveIter++]=(*in_readVariant)[nowDelIter++];
         }
     }
-    in_readVariant.erase( std::next(in_readVariant.begin(), saveIter), in_readVariant.end());
+    in_readVariant->erase( std::next(in_readVariant->begin(), saveIter), in_readVariant->end());
 
     int readCount=0;
     // merge alignment
-    for(std::vector<ReadVariant>::iterator readIter = in_readVariant.begin() ; readIter != in_readVariant.end() ; readIter++ ){
+    for(std::vector<ReadVariant>::iterator readIter = in_readVariant->begin() ; readIter != in_readVariant->end() ; readIter++ ){
 
         std::map<std::string,ReadVariant>::iterator posIter = mergeReadMap.find((*readIter).read_name) ;
 
@@ -876,27 +879,29 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
             int highAllVote = highLeftVote + highRightVote + highMidVote;
             int lowVote = voteResultArray[MID_LOW]+voteResultArray[LEFT_LOW]+voteResultArray[RIGHT_LOW];
             float allLowVote = voteResultArray[DISAGREE] + lowVote;
-            
+            logFile<< chr << "\t" << nodeIter->first << "\t" << highAllVote << "\t" << lowVote << "\t" << voteResultArray[DISAGREE] << "\n";
             if (highAllVote > 0 || (lowVote > 0 && lowVote / allLowVote >= 0.2)) {
-                logFile<< chr << "\t" << nodeIter->first << "\n";
                 nodeIter->second.origin = SOMATIC;
             }
         }
     }
 }
 
-void VairiantGraph::readCorrection(){
-    
-    
-    std::map<std::string,std::map<int,std::map<int,int>>> readBlockHP;
-    
-    std::map<std::string,std::map<int,std::map<int,int>>> readBlockHPcount;
-    
-    
+void VairiantGraph::readCorrection(std::map<double, int> *ploidyRatioMap){
+    // Allocate a map for storing haplotype allele counts
     // haplotype, <position <allele, base count>>
     std::map<int,std::map<int,std::map<double,double>>> *hpAlleleCountMap = new std::map<int,std::map<int,std::map<double,double>>>;
-    
 
+    // Process reads to compute haplotype allele counts
+    processReadVariants(hpAlleleCountMap);
+
+    // Reassign allele results based on the computed haplotype counts
+    reassignAlleleResult(hpAlleleCountMap, ploidyRatioMap);
+
+    delete hpAlleleCountMap;
+}
+
+void VairiantGraph::processReadVariants(std::map<int,std::map<int,std::map<double,double>>> *hpAlleleCountMap) {
     // phasing result and variant allele mapping
     const int variantHaplotype[2][2] = {
         {HAPLOTYPE1, HAPLOTYPE2},
@@ -946,11 +951,12 @@ void VairiantGraph::readCorrection(){
             
             for(auto variantIter = (*readIter).variantVec.begin() ; variantIter != (*readIter).variantVec.end() ; variantIter++ ){
                 if( (*variantIter).allele == 0 || (*variantIter).allele == 1){
-		    // when the mmrate is too high, we think it's a fakeRead
-                    if( (*readIter).fakeRead == true )
-                      (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]+=0.01;
-                    else
-                      (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]++;
+                    // when the mmrate is too high, we think it's a fakeRead
+                    (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]++;
+                    // if( (*readIter).fakeRead == true )
+                    //   (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]+=0.01;
+                    // else
+                    //   (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]++;
                 }
             }
         }
@@ -958,29 +964,15 @@ void VairiantGraph::readCorrection(){
             (*readHpMap)[(*readIter).read_name] = -1;
         }
     }
-    
-    /*
-    for(auto readIter = readBlockHP.begin() ; readIter != readBlockHP.end() ; readIter++ ){
-        
-        int max = 0;
-        for(auto blockIter = readBlockHPcount[readIter->first].begin() ; blockIter != readBlockHPcount[readIter->first].end() ; blockIter++ ){
-            if( (*blockIter).second.size() > max ){
-                max = (*blockIter).second.size();
-            }
-        }
+}
 
-        std::cout<< readIter->first << "\t" << max;
-        
-        for(auto startIter = readIter->second.begin() ; startIter != readIter->second.end() ; startIter++ ){
-            std::cout<< "\t" << startIter->first << ",";
-            for(auto blockIter = startIter->second.begin() ; blockIter != startIter->second.end() ; blockIter++ ){
-                std::cout<< blockIter->first << "," <<  blockIter->second;
-            }
-        }
-        std::cout<< "\n";
-    }
-    */
-    
+void VairiantGraph::calculatePloidyRatio(double hp1Ref, double hp2Ref, std::map<double, int> *ploidyRatioMap) {
+    if (hp1Ref + hp2Ref <= 0) return;
+    double ploidyRatio = std::max(hp1Ref, hp2Ref) / (hp1Ref + hp2Ref);
+    ploidyRatioMap->emplace(ploidyRatio, 0).first->second++;
+}
+
+void VairiantGraph::reassignAlleleResult(std::map<int,std::map<int,std::map<double,double>>> *hpAlleleCountMap, std::map<double, int> *ploidyRatioMap) {
     double snpConfidenceThreshold = params->snpConfidence;
     std::map<int,std::map<int,int>> hpAllele;
     // reassign allele result
@@ -995,6 +987,9 @@ void VairiantGraph::readCorrection(){
         double hp1Alt = (*hpAlleleCountMap)[0][position][1];
         double hp2Ref = (*hpAlleleCountMap)[1][position][0];
         double hp2Alt = (*hpAlleleCountMap)[1][position][1];
+        if(ploidyRatioMap != nullptr && posPhasingResultIter->second.somatic){
+            calculatePloidyRatio(hp1Ref, hp2Ref, ploidyRatioMap);
+        }
         double result1reads = hp1Ref + hp2Alt;
         double result2reads = hp2Ref + hp1Alt;
         if(posPhasingResultIter->second.somatic){
@@ -1029,8 +1024,14 @@ void VairiantGraph::readCorrection(){
             }
         }
     }
+}
 
-    delete hpAlleleCountMap;
+void VairiantGraph::convertNonGermlineToSomatic() {
+    for(auto variantIter = variantPosType->begin(); variantIter != variantPosType->end(); variantIter++) {
+        if(variantIter->second.origin != GERMLINE) {
+            variantIter->second.origin = SOMATIC;
+        }
+    }
 }
 
 void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments) {
@@ -1119,7 +1120,7 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
                             assignPhaseSet = result.refHaplotype;
                         }
                     }
-                    if (result.somatic) {
+                    if(result.somatic){
                         if(result.refHaplotype == HAPLOTYPE_UNDEFINED){
                             result.genotype = {"0|0", "1|1"};
                         }
@@ -1174,7 +1175,7 @@ int VairiantGraph::totalNode(){
     return variantPosType->size();
 }
 
-void VairiantGraph::phasingProcess(PosPhasingResult &inPosPhasingResult, std::vector<LOHSegment> &LOHSegments){
+void VairiantGraph::phasingProcess(PosPhasingResult &inPosPhasingResult, std::vector<LOHSegment> &LOHSegments, std::map<double, int> *ploidyRatioMap){
     posPhasingResult = &inPosPhasingResult;
 
     // This step involves converting all reads into a graph structure, which will be stored as an edge list
@@ -1189,7 +1190,7 @@ void VairiantGraph::phasingProcess(PosPhasingResult &inPosPhasingResult, std::ve
 
     // This step will utilize the results of graph phasing to attempt to separate all the reads into two 
     // haplotypes and then identify high-confidence SNPs using reads from the two distinct haplotypes.
-    this->readCorrection();  
+    this->readCorrection(ploidyRatioMap);  
 }
 
 Roller::Roller() {}
@@ -1685,4 +1686,60 @@ void Clip::detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegmen
     if (!LOHSegments.empty() && LOHSegments.back().start != startPos){
         LOHSegments.push_back(LOHSegment(startPos, *(largeGenomicEventInterval->rbegin())));
     }
+}
+// Implementation of PurityCalculator class methods
+std::map<double, int> PurityCalculator::mergeDistributionMap(const std::map<std::string, std::map<double, int>>& data) {
+    std::map<double, int> distributionSumMap;
+    for (const auto& chrPair : data) {
+        for (const auto& valuePair : chrPair.second) {
+            distributionSumMap[valuePair.first] += valuePair.second;
+        }
+    }
+    return distributionSumMap;
+}
+
+int PurityCalculator::getTotalCount(const std::map<double, int>& data) {
+    int totalCount = 0;
+    for (const auto& pair : data) {
+        totalCount += pair.second;
+    }
+    return totalCount;
+}
+
+double PurityCalculator::findQuartile(const std::map<double, int>& data, double targetPos) {
+    int cumulativeCount = 0;
+    double prevKey = data.begin()->first;
+    int prevCumulativeCount = 0;
+
+    for (const auto& dataIter : data) {
+        cumulativeCount += dataIter.second;
+
+        if (cumulativeCount >= targetPos) {
+            if (cumulativeCount == targetPos) {
+                return dataIter.first;
+            }
+            double fraction = (targetPos - prevCumulativeCount) / (cumulativeCount - prevCumulativeCount);
+            return prevKey + fraction * (dataIter.first - prevKey);
+        }
+
+        prevCumulativeCount = cumulativeCount;
+        prevKey = dataIter.first;
+    }
+    return prevKey;
+}
+
+
+double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> &inChrDistributionMap, std::string &output_root_path) {
+    std::map<double, int> distributionSumMap = mergeDistributionMap(inChrDistributionMap);
+    int totalCount = getTotalCount(distributionSumMap);
+    double q1 = findQuartile(distributionSumMap, 0.25 * (totalCount + 1));
+    double q3 = findQuartile(distributionSumMap, 0.75 * (totalCount + 1));
+    std::ofstream outputFile(output_root_path + ".q1_q3");
+    if (outputFile.is_open()) {
+        outputFile << q1 << "\t" << q3 << "\n";
+        outputFile.close();
+    }
+    double purity = -1.2262 + 4.2920*q1 - 1.0339*q3;
+    // Clamp the purity value between 0 and 1
+    return std::max(0.0, std::min(purity, 1.0));
 }

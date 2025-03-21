@@ -77,8 +77,8 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
 
     // record chromosome info
     std::map<std::string, ChrInfo> chrInfoMap;
-    // Initialize an empty map in chrPhasingResult to store all phasing results.
-    // This is done to prevent issues with multi-threading, by defining an empty map first.
+    // Initialize chrInfoMap entries for each chromosome name in advance
+    // to avoid potential issues during parallel processing later
     for (std::vector<std::string>::iterator chrIter = chrName.begin(); chrIter != chrName.end(); chrIter++)    {
         chrInfoMap[*chrIter] = ChrInfo();
     }
@@ -91,6 +91,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         fprintf(stderr, "Error creating thread pool\n");
     }
 
+    std::cerr << "parsing BAM, somatic calling, and phasing" << std::endl;
     begin = time(NULL);
     
     // loop all chromosome
@@ -111,19 +112,20 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         // create a bam parser object and prepare to fetch varint from each vcf file
 	    BamParser *bamParser = new BamParser((*chrIter), params.bamFile, snpFile, svFile, modFile, chr_reference);
         // use to store variant
-        std::vector<ReadVariant> readVariantVec;
+        std::vector<ReadVariant> *readVariantVec = new std::vector<ReadVariant>();
         // run fetch variant process
-        bamParser->direct_detect_alleles(lastSNPpos, threadPool, params, readVariantVec, chrInfo.clipCount, chr_reference);
+        bamParser->direct_detect_alleles(lastSNPpos, threadPool, params, *readVariantVec, chrInfo.clipCount, chr_reference);
         // free memory
         delete bamParser;
         
         // filter variants prone to switch errors in ONT sequencing.
         if(params.isONT){
-            snpFile.filterSNP((*chrIter), readVariantVec, chr_reference);
+            snpFile.filterSNP((*chrIter), *readVariantVec, chr_reference);
         }
 
         // bam files are partial file or no read support this chromosome's SNP
-        if( readVariantVec.size() == 0 ){
+        if( readVariantVec->size() == 0 ){
+            delete readVariantVec;
             continue;
         }
 
@@ -138,12 +140,43 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         
         // create a graph object and prepare to phasing.
         VairiantGraph *vGraph = new VairiantGraph(chr_reference, params, (*chrIter));
+        chrInfo.vGraph = vGraph;
         // trans read-snp info to edge info
         vGraph->addEdge(readVariantVec);
         // run somatic calling algorithm
         vGraph->somaticCalling(snpFile.getVariants((*chrIter)));
         // run main algorithm
-        vGraph->phasingProcess(chrInfo.posPhasingResult, chrInfo.LOHSegments);
+        vGraph->phasingProcess(chrInfo.posPhasingResult, chrInfo.LOHSegments, &chrInfo.ploidyRatioMap);
+        std::cerr<< "(" << (*chrIter) << "," << difftime(time(NULL), chrbegin) << "s)";
+    }
+
+    std::map<std::string, std::map<double, int>> mergedPloidyRatioMap;
+    for (const auto& chrInfo : chrInfoMap) {
+        mergedPloidyRatioMap[chrInfo.first] = chrInfo.second.ploidyRatioMap;
+    }
+    double purity = PurityCalculator::getPurity(mergedPloidyRatioMap, params.resultPrefix);
+    std::cerr << std::endl;
+    std::cerr << "purity: " << purity << std::endl;
+    if(purity > 0.95){
+        std::cerr << "second round phasing, ";
+    }
+    std::cerr << "export phasing result" << std::endl;
+
+    #pragma omp parallel for schedule(dynamic) num_threads(params.numThreads)
+    for(std::vector<std::string>::iterator chrIter = chrName.begin(); chrIter != chrName.end() ; chrIter++ ){
+        std::time_t chrbegin = time(NULL);
+        ChrInfo &chrInfo = chrInfoMap[*chrIter];
+        if(chrInfo.vGraph == nullptr)continue;
+
+        VairiantGraph *vGraph = chrInfo.vGraph;
+        if(purity > 0.95){
+            // convert non-germline variants to somatic variants
+            vGraph->convertNonGermlineToSomatic();
+            // reset phasing result
+            chrInfo.posPhasingResult = PosPhasingResult();
+            // run main algorithm
+            vGraph->phasingProcess(chrInfo.posPhasingResult, chrInfo.LOHSegments, nullptr);
+        }
         // export phasing result
         vGraph->exportPhasingResult(chrInfo.posPhasingResult, chrInfo.LOHSegments);
         // generate dot file
@@ -153,10 +186,6 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         
         // release the memory used by the object.
         vGraph->destroy();
-        
-        // free memory
-        readVariantVec.clear();
-        readVariantVec.shrink_to_fit();
         delete vGraph;
         
         std::cerr<< "(" << (*chrIter) << "," << difftime(time(NULL), chrbegin) << "s)";
