@@ -1088,28 +1088,20 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
                 if(inLOHRegion){
                     if(result.somatic){
                         if(connectedHP == HAPLOTYPE1){
-                            switch(result.refHaplotype){
-                                case HAPLOTYPE_UNDEFINED:
-                                    result.genotype = {".|0", ".|1", ".|1"};
-                                    break;
-                                case HAPLOTYPE1:
-                                    result.genotype = {".|0", ".|0", ".|1"};
-                                    break;
-                                case HAPLOTYPE2:
-                                    result.genotype = {".|0", ".|1", ".|0"};
-                                    break;
+                            if(result.refHaplotype == HAPLOTYPE_UNDEFINED){
+                                result.genotype = {".|0", ".|1", ".|1"};
+                            }else if(result.refHaplotype == HAPLOTYPE1){
+                                result.genotype = {".|0", ".|0", ".|1"};
+                            }else if(result.refHaplotype == HAPLOTYPE2){
+                                result.genotype = {".|0", ".|1", ".|0"};
                             }
                         }else{
-                            switch(result.refHaplotype){
-                                case HAPLOTYPE_UNDEFINED:
-                                    result.genotype = {"0|.", "1|.", "1|."};
-                                    break;
-                                case HAPLOTYPE1:
-                                    result.genotype = {"0|.", "0|.", "1|."};
-                                    break;
-                                case HAPLOTYPE2:
-                                    result.genotype = {"0|.", "1|.", "0|."};
-                                    break;
+                            if(result.refHaplotype == HAPLOTYPE_UNDEFINED){
+                                result.genotype = {"0|.", "1|.", "1|."};
+                            }else if(result.refHaplotype == HAPLOTYPE1){
+                                result.genotype = {"0|.", "0|.", "1|."};
+                            }else if(result.refHaplotype == HAPLOTYPE2){
+                                result.genotype = {"0|.", "1|.", "0|."};
                             }
                         }
                     }
