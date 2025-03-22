@@ -12,6 +12,8 @@
 #include <ctime>
 #include <vector>
 #include <omp.h>
+#include <deque>
+#include <cmath>
 
 enum Haplotype {
     HAPLOTYPE_UNDEFINED = -1,
@@ -42,32 +44,70 @@ enum VariantGenotype {
     GENOTYPE_UNDEFINED = -1, // undefined genotype
 };
 
-constexpr size_t PHASING_RESULT_SIZE = 1;
+enum ClipFrontBack {
+    FRONT = 0,
+    BACK = 1
+};
+
+constexpr size_t PHASING_RESULT_SIZE = 3;
 struct PhasingResult {
     Haplotype refHaplotype = HAPLOTYPE_UNDEFINED;
     std::vector<int> phaseSet;
     VariantType type = VARIANT_UNDEFINED;
+    bool somatic = false;
     std::vector<std::string> genotype;
     PhasingResult() = default;
     PhasingResult(Haplotype inRefHaplotype, int inPhaseSet, VariantType inType)
         : refHaplotype(inRefHaplotype), type(inType){
             phaseSet.push_back(inPhaseSet);
     }
+    PhasingResult(Haplotype inRefHaplotype, int inPhaseSet, VariantType inType, bool inSomatic)
+        : refHaplotype(inRefHaplotype), type(inType), somatic(inSomatic) {
+            phaseSet.push_back(inPhaseSet);
+    }
+    PhasingResult(int inPhaseSet, VariantType inType, std::string inGenotype)
+        : type(inType){
+            phaseSet.push_back(inPhaseSet);
+            genotype.push_back(inGenotype);
+    }
 };
 typedef std::map<int, PhasingResult> PosPhasingResult;
-typedef std::map<std::string, PosPhasingResult> ChrPhasingResult;
+// pos<read start|read end ,count >
+typedef std::map<int, std::array<int, 2>> ClipCount;
+struct LOHSegment{
+    int start;
+    int end;
+    Allele startAllele;
+    Allele endAllele;
+    LOHSegment(int inStart, int inEnd): 
+        start(inStart), end(inEnd), startAllele(Allele_UNDEFINED), endAllele(Allele_UNDEFINED){}
+};
+class VairiantGraph;
+struct ChrInfo{
+    PosPhasingResult posPhasingResult = PosPhasingResult();
+    ClipCount clipCount = ClipCount();
+    std::vector<int> largeGenomicEventInterval = std::vector<int>();
+    std::vector<std::pair<int, int>> smallGenomicEventRegion = std::vector<std::pair<int, int>>();
+    std::vector<LOHSegment> LOHSegments = std::vector<LOHSegment>();
+    VairiantGraph *vGraph = nullptr;
+    std::map<double, int> ploidyRatioMap = std::map<double, int>();
+};
+typedef std::map<std::string, std::map<int, PhasingResult>> ChrPhasingResult;
+
 
 // use for parsing
 struct Variant{
-    Variant(int position, int allele, int quality):
+    Variant(int position, int allele, int quality, bool homozygous = false):
     position(position), 
     allele(allele), 
-    quality(quality){};
+    quality(quality),
+    homozygous(homozygous){};
     
     int position;
     int allele;
     int quality;
     bool underHomopolymer;
+    bool homozygous;
 };
 
 struct ReadVariant{

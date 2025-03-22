@@ -12,6 +12,8 @@ struct PhasingParameters
     std::string svFile;
     std::vector<std::string> bamFile;
     std::string modFile="";
+    std::string ponFile="";
+    std::string strictPonFile="";
     std::string fastaFile;
     std::string resultPrefix;
     bool generateDot;
@@ -31,6 +33,8 @@ struct PhasingParameters
     
     double edgeThreshold;
     double overlapThreshold;
+    
+    int somaticConnectAdjacent;
     
     std::string version;
     std::string command;
