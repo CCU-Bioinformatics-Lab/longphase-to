@@ -68,6 +68,8 @@ class FormatSample {
 
     public:
         FormatSample(std::vector<std::string>& fields);
+        int getValueStart(const std::string& flag);
+        std::string getValue(const std::string& flag);
         void eraseFormatSample(const std::string& flag);
         void addFlagAndValue(const std::string& flagBase, const int value, const std::string& flagAdd = "");
         void setGTFlagAndValue(const std::string& flagBase, const std::string& value, const std::string& flagAdd = "");

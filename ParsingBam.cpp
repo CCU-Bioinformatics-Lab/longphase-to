@@ -114,6 +114,31 @@ void FormatSample::setGTValue(int modifyStart, const std::string &value) {
     fields[SAMPLE][modifyStart+2] = value[2];
 }
 
+int FormatSample::getValueStart(const std::string& flag){
+    auto flagStart = fields[FORMAT].find(flag);
+    if (flagStart != std::string::npos) {
+        int valueStart = findValueStart(flagStart);
+        return valueStart;
+    }
+    return -1;
+}
+
+std::string FormatSample::getValue(const std::string& flag){
+    auto flagStart = fields[FORMAT].find(flag);
+    if (flagStart != std::string::npos) {
+        int valueStart = findValueStart(flagStart);
+        auto endPos = fields[SAMPLE].find(":", valueStart + 1);
+        std::string value;
+        if (endPos != std::string::npos) {
+            value = fields[SAMPLE].substr(valueStart, endPos - valueStart);
+        } else {
+            value = fields[SAMPLE].substr(valueStart, fields[SAMPLE].length() - valueStart);
+        }
+        return value;
+    }
+    return "";
+}
+
 void FormatSample::eraseFormatSample(const std::string &flag) {
     auto flagStart = fields[FORMAT].find(flag);
     if (flagStart != std::string::npos) {
