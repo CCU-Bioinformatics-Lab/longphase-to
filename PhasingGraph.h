@@ -167,6 +167,11 @@ struct EdgeResult{
     int aa;
 };
 
+struct VariantBases{
+    int targetCount;
+    std::map<int, int> offsetDiffRefCount; //offset, diff ref count
+};
+
 class VairiantGraph{
     
     private:

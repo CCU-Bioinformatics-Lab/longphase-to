@@ -13,6 +13,18 @@
 
 #include <zlib.h>
 
+enum CIGAR_OP {
+    MATCH = 0,     // alignment match (can be a sequence match or mismatch)
+    INSERTION = 1, // insertion to the reference
+    DELETION = 2,  // deletion from the reference
+    SKIP = 3,      // skipped region from the reference
+    SOFT_CLIP = 4, // soft clipping
+    HARD_CLIP = 5, // hard clipping
+    N = 6,         // skipped region of unknown type
+    EQ = 7,        // sequence match
+    X = 8,         // sequence mismatch
+};
+
 struct RefAlt{
     std::string Ref;
     std::string Alt;
