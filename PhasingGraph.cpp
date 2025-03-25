@@ -1676,8 +1676,6 @@ void Clip::detectInterval(ClipCount &clipCount){
 void Clip::detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegments){
     std::map<int, RefAlt> *currentVariants = snpMap.getVariants(chr);
 
-    bool currLOH = false;
-    int startPos = -1;
     int hetCountNum = 0;
     int homCountNum = 0;
     auto intervalIter = largeGenomicEventInterval->begin();
@@ -1687,12 +1685,8 @@ void Clip::detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegmen
         if (posIter->first >= *intervalIter) {
             double genotypeRatio = (hetCountNum + homCountNum > 0) ? static_cast<double>(hetCountNum) / (homCountNum + hetCountNum) : 0.0;
             if (hetCountNum + homCountNum > 0){
-                if (genotypeRatio >= 0.09 && currLOH){
-                    startPos = *intervalIter;
-                    currLOH = !currLOH;
-                }else if (genotypeRatio < 0.09 && !currLOH){
-                    LOHSegments.push_back(LOHSegment(startPos, *intervalIter));
-                    currLOH = !currLOH;
+                if (genotypeRatio < 0.09){
+                    LOHSegments.push_back(LOHSegment(*(intervalIter-1), *intervalIter, genotypeRatio));
                 }
             }
             
@@ -1702,9 +1696,6 @@ void Clip::detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegmen
             // move to next interval
             while (intervalIter != largeGenomicEventInterval->end() && posIter->first >= *intervalIter) {
                 intervalIter++;
-            }
-            if (intervalIter == largeGenomicEventInterval->end()){
-                break;
             }
         }
         while (regionIter != smallGenomicEventRegion->end() - 1 && posIter->first > regionIter->second){
@@ -1717,9 +1708,6 @@ void Clip::detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegmen
                 hetCountNum++;
             }
         }
-    }
-    if (!LOHSegments.empty() && LOHSegments.back().start != startPos){
-        LOHSegments.push_back(LOHSegment(startPos, *(largeGenomicEventInterval->rbegin())));
     }
 }
 // Implementation of PurityCalculator class methods
