@@ -21,7 +21,11 @@ static const char *CORRECT_USAGE_MESSAGE =
 "   -t, --threads=Num                      number of thread. default:1\n"
 "   -o, --out-prefix=NAME                  prefix of phasing result. default: result\n"
 "   --indels                               phase small indel. default: False\n"
-"   --dot                                  each contig/chromosome will generate dot file. \n\n"
+"   --dot                                  each contig/chromosome will generate dot file.\n"
+"   --loh                                  output LOH results. default: False\n"
+"   --sge                                  output SmallGenomicEvent results. default: False\n"
+"   --lge                                  output LargeGenomicEvent results. default: False\n"
+"   --ge                                   output all GermlineEvent results. default: False\n\n"
 
 "somatic arguments:\n"
 "   --pon-file=NAME                        input PON VCF file. determines germline variants using position-based matching.\n"
@@ -53,7 +57,7 @@ static const char *CORRECT_USAGE_MESSAGE =
 
 static const char* shortopts = "s:b:o:t:r:d:1:a:q:x:p:e:n:m:L:";
 
-enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT};
+enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT, OUTPUT_LOH, OUTPUT_SGE, OUTPUT_LGE, OUTPUT_GE};
 
 static const struct option longopts[] = { 
     { "help",                 no_argument,        NULL, OPT_HELP },
@@ -62,6 +66,10 @@ static const struct option longopts[] = {
     { "pb",                   no_argument,        NULL, IS_PB }, 
     { "version",              no_argument,        NULL, VERSION }, 
     { "indels",               no_argument,        NULL, PHASE_INDEL },   
+    { "loh",                  no_argument,        NULL, OUTPUT_LOH },
+    { "sge",                  no_argument,        NULL, OUTPUT_SGE },
+    { "lge",                  no_argument,        NULL, OUTPUT_LGE },
+    { "ge",                   no_argument,        NULL, OUTPUT_GE },
     { "sv-file",              required_argument,  NULL, SV_FILE },  
     { "mod-file",             required_argument,  NULL, MOD_FILE },
     { "pon-file",             required_argument,  NULL, PON_FILE },
@@ -119,6 +127,11 @@ namespace opt
     static std::string command;
 
     static int somaticConnectAdjacent = 6;
+
+    static bool outputLOH = false;
+    static bool outputSGE = false;
+    static bool outputLGE = false;
+    static bool outputGE = true;
 }
 
 void PhasingOptions(int argc, char** argv)
@@ -159,6 +172,10 @@ void PhasingOptions(int argc, char** argv)
         case PON_FILE: arg >> opt::ponFile; break;
         case STRICT_PON_FILE: arg >> opt::strictPonFile; break;
         case SOMATIC_CONNECT_ADJACENT: arg >> opt::somaticConnectAdjacent; break;
+        case OUTPUT_LOH: opt::outputLOH=true; break;
+        case OUTPUT_SGE: opt::outputSGE=true; break;
+        case OUTPUT_LGE: opt::outputLGE=true; break;
+        case OUTPUT_GE: opt::outputGE=true; break;
         case OPT_HELP:
             std::cout << CORRECT_USAGE_MESSAGE;
             exit(EXIT_SUCCESS);
@@ -374,6 +391,10 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     ecParams.version=in_version;
     ecParams.command=opt::command;
     
+    ecParams.outputLOH = opt::outputLOH;
+    ecParams.outputSGE = opt::outputSGE;
+    ecParams.outputLGE = opt::outputLGE;
+    ecParams.outputGE = opt::outputGE;
 
     PhasingProcess processor(ecParams);
 

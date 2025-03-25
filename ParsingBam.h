@@ -12,6 +12,7 @@
 #include <htslib/vcfutils.h>
 
 #include <zlib.h>
+#include <random>
 
 enum CIGAR_OP {
     MATCH = 0,     // alignment match (can be a sequence match or mismatch)
@@ -148,7 +149,8 @@ class SnpParser : public BaseVairantParser{
         void fetchAndValidateTag(const int checkTag, const char *tag, hts_pos_t pos);
         VariantGenotype confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
         float getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
-        void recordVariant(std::string &chr, bcf1_t *rec, float vaf, VariantGenotype parserType, std::map<std::string, std::map<int, RefAlt> > *chrVariant);        std::vector<std::string> splitString(const std::string &input);
+        void recordVariant(std::string &chr, bcf1_t *rec, float vaf, VariantGenotype parserType, std::map<std::string, std::map<int, RefAlt> > *chrVariant);
+        std::vector<std::string> splitString(const std::string &input);
         void validateHeader(const std::vector<std::string>& fields);
         std::array<std::string, 5> splitFieldsToArray(const char* ptr, size_t inputSize);
         std::vector<std::string> splitFieldsToVector(const char* ptr, size_t inputSize);
@@ -277,5 +279,43 @@ class BamParser{
 
 };
 
+
+class GenomicWriter {
+private:
+    const std::string resultPrefix;
+    const std::vector<std::string>& chrName;
+    const std::map<std::string, ChrInfo>& chrInfoMap;
+    
+    // Random number generation
+    std::mt19937 rng{std::random_device{}()};
+    std::uniform_int_distribution<> colorDist{0, 255};
+    
+    // Buffer for writing
+    static constexpr size_t BUFFER_SIZE = 8192;
+    std::string buffer;
+    
+    void openFile(std::ofstream& file, const std::string& filename);
+    void flushBuffer(std::ofstream& file);
+    void appendToBED(std::ofstream& file, const std::string& chr, int start, int end, 
+                    const std::string& name, double score, const std::string& strand);
+    std::string generateRandomColor();
+
+    void writeLOHSegments(std::ofstream &ofs);
+    void writeSmallGenomicEvent(std::ofstream &ofs);
+    void writeLargeGenomicEvent(std::ofstream &ofs);
+    void write(std::ofstream &ofs, std::function<void()> func);
+    
+public:
+    GenomicWriter(const std::string& resultPrefix, 
+                 const std::vector<std::string>& chrName,
+                 const std::map<std::string, ChrInfo>& chrInfoMap);
+    ~GenomicWriter();
+
+    void writeAllEvents();
+    void writeLGE();
+    void writeSGE();
+    void writeLOH();
+    void measureTime(const std::string& message, bool output, std::function<void()> func);
+};
 
 #endif

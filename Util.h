@@ -14,6 +14,7 @@
 #include <omp.h>
 #include <deque>
 #include <cmath>
+#include <functional>
 
 enum Haplotype {
     HAPLOTYPE_UNDEFINED = -1,
@@ -82,8 +83,9 @@ struct LOHSegment{
     int end;
     Allele startAllele;
     Allele endAllele;
-    LOHSegment(int inStart, int inEnd): 
-        start(inStart), end(inEnd), startAllele(Allele_UNDEFINED), endAllele(Allele_UNDEFINED){}
+    double ratio;
+    LOHSegment(int inStart, int inEnd, double inRatio):
+        start(inStart), end(inEnd), startAllele(Allele_UNDEFINED), endAllele(Allele_UNDEFINED), ratio(inRatio){}
 };
 class VairiantGraph;
 struct ChrInfo{

@@ -1828,3 +1828,144 @@ std::map<int, std::map<std::string ,RefAlt> > METHParser::getVariants(std::strin
     return targetVariants;
 }
 
+GenomicWriter::GenomicWriter(const std::string& resultPrefix, 
+                           const std::vector<std::string>& chrName,
+                           const std::map<std::string, ChrInfo>& chrInfoMap)
+    : resultPrefix(resultPrefix)
+    , chrName(chrName)
+    , chrInfoMap(chrInfoMap)
+    , buffer()
+{
+    buffer.reserve(BUFFER_SIZE);
+}
+
+GenomicWriter::~GenomicWriter() {
+}
+
+void GenomicWriter::openFile(std::ofstream& file, const std::string& filename) {
+    file.open(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file: " + filename);
+    }
+}
+
+void GenomicWriter::flushBuffer(std::ofstream& file) {
+    if (!buffer.empty()) {
+        file << buffer;
+        buffer.clear();
+        buffer.reserve(BUFFER_SIZE);
+    }
+}
+
+std::string GenomicWriter::generateRandomColor() {
+    return std::to_string(colorDist(rng)) + "," + 
+           std::to_string(colorDist(rng)) + "," + 
+           std::to_string(colorDist(rng));
+}
+
+void GenomicWriter::appendToBED(std::ofstream& file, const std::string& chr, 
+                               int start, int end, const std::string& name,
+                               double score, const std::string& strand) {
+    std::string color = generateRandomColor();
+    
+    buffer.append(chr)
+          .append("\t")
+          .append(std::to_string(start))
+          .append("\t")
+          .append(std::to_string(end))
+          .append("\t")
+          .append(name)
+          .append("\t")
+          .append(std::to_string(score))
+          .append("\t")
+          .append(strand)
+          .append("\t")
+          .append(std::to_string(start))
+          .append("\t")
+          .append(std::to_string(end))
+          .append("\t")
+          .append(color)
+          .append("\n");
+          
+    if (buffer.size() >= BUFFER_SIZE) {
+        flushBuffer(file);
+    }
+}
+
+void GenomicWriter::measureTime(const std::string& message, bool output, std::function<void()> func) {
+    if (!output) return;
+
+    std::time_t start = time(NULL);
+    std::cerr << "Writing " << message << " results... ";
+    func();
+    std::cerr << difftime(time(NULL), start) << "s\n";
+}
+
+void GenomicWriter::writeLOHSegments(std::ofstream &ofs) {
+    for(const auto& chr : chrName) {
+        for(const auto& segment : chrInfoMap.at(chr).LOHSegments) {
+            appendToBED(ofs, chr, segment.start, segment.end, "LOH", segment.ratio, ".");
+        }
+    }
+}
+
+void GenomicWriter::writeSmallGenomicEvent(std::ofstream &ofs) {
+    for(const auto& chr : chrName) {
+        for(const auto& segment : chrInfoMap.at(chr).smallGenomicEventRegion) {
+            appendToBED(ofs, chr, segment.first, segment.second, "SGE", 0, ".");
+        }
+    }
+}
+
+void GenomicWriter::writeLargeGenomicEvent(std::ofstream &ofs) {
+    for(const auto& chr : chrName) {
+        const auto& intervals = chrInfoMap.at(chr).largeGenomicEventInterval;
+        if(intervals.empty()) continue;
+        
+        auto it = intervals.begin();
+        auto end = intervals.end();
+        // Handle first interval
+        // appendToBED(ofs, chr, *it - 1, *it, "LGE", 0, ".");
+        // Handle remaining intervals
+        auto prev = it++;
+        for(; it != end; ++it, ++prev) {
+            appendToBED(ofs, chr, *prev, *it, "LGE", 0, ".");
+        }
+    }
+}
+
+void GenomicWriter::write(std::ofstream &ofs, std::function<void()> func) {
+    try {
+        func();
+        flushBuffer(ofs);
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
+}
+
+void GenomicWriter::writeLOH() {
+    std::ofstream ofs;
+    openFile(ofs, resultPrefix + "_LOH.bed");
+    write(ofs, [this, &ofs]() { writeLOHSegments(ofs); });
+}
+void GenomicWriter::writeSGE() {
+    std::ofstream ofs;
+    openFile(ofs, resultPrefix + "_SGE.bed");
+    write(ofs, [this, &ofs]() { writeSmallGenomicEvent(ofs); });
+}
+
+void GenomicWriter::writeLGE() {
+    std::ofstream ofs;
+    openFile(ofs, resultPrefix + "_LGE.bed");
+    write(ofs, [this, &ofs]() { writeLargeGenomicEvent(ofs); });
+    ofs.close();
+}
+
+void GenomicWriter::writeAllEvents() {
+    std::ofstream ofs;
+    openFile(ofs, resultPrefix + "_GE.bed");
+    write(ofs, [this, &ofs]() { writeLargeGenomicEvent(ofs); });
+    write(ofs, [this, &ofs]() { writeSmallGenomicEvent(ofs); });
+    write(ofs, [this, &ofs]() { writeLOHSegments(ofs); });
+    ofs.close();
+}

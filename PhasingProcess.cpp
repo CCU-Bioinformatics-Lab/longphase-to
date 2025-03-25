@@ -15,6 +15,10 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     std::cerr<< "REF File       : " << params.fastaFile     << "\n";
     std::cerr<< "Output Prefix  : " << params.resultPrefix  << "\n";
     std::cerr<< "Generate Dot   : " << ( params.generateDot ? "True" : "False" ) << "\n";
+    std::cerr<< "Output LOH     : " << ( params.outputLOH ? "True" : "False" ) << "\n";
+    std::cerr<< "Output SGE     : " << ( params.outputSGE ? "True" : "False" ) << "\n";
+    std::cerr<< "Output LGE     : " << ( params.outputLGE ? "True" : "False" ) << "\n";
+    std::cerr<< "Output GE      : " << ( params.outputGE ? "True" : "False" ) << "\n";
     std::cerr<< "BAM File       : ";
     for( auto file : params.bamFile){
         std::cerr<< file <<" " ;   
@@ -199,25 +203,16 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     }
 
     std::cerr<< "\nparsing total:  " << difftime(time(NULL), begin) << "s\n";
-    
-    begin = time(NULL);
-    std::cerr<< "writeResult SNP ... ";
-    snpFile.writeResult(chrPhasingResult);
-    std::cerr<< difftime(time(NULL), begin) << "s\n";
-    
-    if(params.svFile!=""){
-        begin = time(NULL);
-        std::cerr<< "write SV Result ... ";
-        svFile.writeResult(chrPhasingResult);
-        std::cerr<< difftime(time(NULL), begin) << "s\n";
-    }
-    
-    if(params.modFile!=""){
-        begin = time(NULL);
-        std::cerr<< "write mod Result ... ";
-        modFile.writeResult(chrPhasingResult);
-        std::cerr<< difftime(time(NULL), begin) << "s\n";
-    }
+
+    // write result to file
+    GenomicWriter genomicWriter(params.resultPrefix, chrName, chrInfoMap);
+    genomicWriter.measureTime("LOH", params.outputLOH, [&]() { genomicWriter.writeLOH(); });
+    genomicWriter.measureTime("SGE", params.outputSGE, [&]() { genomicWriter.writeSGE(); });
+    genomicWriter.measureTime("LGE", params.outputLGE, [&]() { genomicWriter.writeLGE(); });
+    genomicWriter.measureTime("GE", params.outputGE, [&]() { genomicWriter.writeAllEvents(); });
+    genomicWriter.measureTime("SNP", true, [&]() { snpFile.writeResult(chrPhasingResult); });
+    genomicWriter.measureTime("SV", params.svFile != "", [&]() { svFile.writeResult(chrPhasingResult); });
+    genomicWriter.measureTime("MOD", params.modFile != "", [&]() { modFile.writeResult(chrPhasingResult); });
 
     std::cerr<< "\ntotal process: " << difftime(time(NULL), processBegin) << "s\n";
 
