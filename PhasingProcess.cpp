@@ -161,7 +161,8 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     double purity = PurityCalculator::getPurity(mergedPloidyRatioMap, params.resultPrefix);
     std::cerr << std::endl;
     std::cerr << "purity: " << purity << std::endl;
-    if(purity > 0.95){
+    bool highPurity = purity > 0.95;
+    if(highPurity){
         std::cerr << "second round phasing, ";
     }
     std::cerr << "export phasing result" << std::endl;
@@ -173,7 +174,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         if(chrInfo.vGraph == nullptr)continue;
 
         VairiantGraph *vGraph = chrInfo.vGraph;
-        if(purity > 0.95){
+        if(highPurity){
             // convert non-germline variants to somatic variants
             vGraph->convertNonGermlineToSomatic();
             // reset phasing result

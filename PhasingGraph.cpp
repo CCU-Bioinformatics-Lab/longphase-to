@@ -1120,10 +1120,12 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
             }
             nextConnectedAllele = lohIter->endAllele;
         }
-        if(variantIter->second.homozygous && inLOHRegion && variantIter->second.origin != GERMLINE){
-            std::string genotype = (connectedHP == HAPLOTYPE1) ? ".|1" : "1|.";
-            PhasingResult phasingResult(lastPhaseSet, variantIter->second.type, genotype);
-            posPhasingResult.emplace(variantIter->first, phasingResult);
+        if(variantIter->second.homozygous){
+            if(inLOHRegion && variantIter->second.origin == SOMATIC){
+                std::string genotype = (connectedHP == HAPLOTYPE1) ? ".|1" : "1|.";
+                PhasingResult phasingResult(lastPhaseSet, variantIter->second.type, genotype);
+                posPhasingResult.emplace(variantIter->first, phasingResult);
+            }
         }else{
             auto posPhasingResultIter = posPhasingResult.find(variantIter->first);
             if(posPhasingResultIter != posPhasingResult.end()){
