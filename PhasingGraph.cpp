@@ -1762,7 +1762,7 @@ double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> 
         outputFile << q1 << "\t" << q3 << "\n";
         outputFile.close();
     }
-    double purity = -1.2262 + 4.2920*q1 - 1.0339*q3;
+    double purity = -5.6435 +12.4351*q1 + 2.2520*q3 - 41.6128*q1*q1 + 49.7679*q1*q3 - 18.8315*q3*q3;
     // Clamp the purity value between 0 and 1
     return std::max(0.0, std::min(purity, 1.0));
 }
