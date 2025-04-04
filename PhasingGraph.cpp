@@ -395,6 +395,8 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
     bool inLOHRegion = false;
     bool genomicEventChange = false;
     int prevPhasedNode = -1;
+    int lohStart = -1;
+    int lohEnd = -1;
     Haplotype connectHP = HAPLOTYPE_UNDEFINED;
 
     // Visit all position and assign SNPs to haplotype.
@@ -419,9 +421,13 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
         Haplotype currHP = HAPLOTYPE1;
         while (lohIter != LOHSegments.end() && currPos > lohIter->end){
             lohIter++;
+            if(lohIter != LOHSegments.end()){
+                lohStart = lohIter->start;
+                lohEnd = lohIter->end;
+            }
         }
         bool backLOHRegion = inLOHRegion;
-        inLOHRegion = (lohIter != LOHSegments.end() && lohIter->start <= currPos && currPos <= lohIter->end);
+        inLOHRegion = lohStart <= currPos && currPos <= lohEnd;
         if(backLOHRegion != inLOHRegion){
             genomicEventChange = true;
         }
@@ -443,7 +449,7 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
                     if (inLOHRegion) {
                         lohIter->startAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
                     } else {
-                        lohIter->endAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
+                        (lohIter - 1)->endAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
                         currHP = connectHP;
                     }
                     hpCountMap2->clear();
@@ -1162,6 +1168,7 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
                         else if(result.refHaplotype == HAPLOTYPE2){
                             result.genotype = {"0|0", "1|."};
                         }
+                        result.phaseSet.push_back(-1);
                     }else{
                         if(result.refHaplotype == HAPLOTYPE1){
                             result.genotype = {"0|1"};
@@ -1662,10 +1669,12 @@ void Clip::detectInterval(ClipCount &clipCount){
         }
     }
     clipCount.erase(--clipCount.end());
-    if(!largeGenomicEventInterval->empty() && largeGenomicEventInterval->front() != clipCount.begin()->first){
+    if((!largeGenomicEventInterval->empty() && largeGenomicEventInterval->front() != clipCount.begin()->first) ||
+        (largeGenomicEventInterval->empty() && !clipCount.empty())){
         largeGenomicEventInterval->insert(largeGenomicEventInterval->begin(), clipCount.begin()->first);
     }
-    if(!largeGenomicEventInterval->empty() && largeGenomicEventInterval->back() != clipCount.rbegin()->first){
+    if((!largeGenomicEventInterval->empty() && largeGenomicEventInterval->back() != clipCount.rbegin()->first) ||
+        (largeGenomicEventInterval->empty() && !clipCount.empty())){
         largeGenomicEventInterval->push_back(clipCount.rbegin()->first);
     }
 }
@@ -1675,11 +1684,13 @@ void Clip::detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegmen
 
     int hetCountNum = 0;
     int homCountNum = 0;
+    int filterStart = 0;
+    int filterEnd = 0;
     auto intervalIter = largeGenomicEventInterval->begin();
     auto regionIter = smallGenomicEventRegion->begin();
 
     for (auto posIter = currentVariants->begin(); posIter != currentVariants->end(); ++posIter) {
-        if (posIter->first >= *intervalIter) {
+        if (intervalIter != largeGenomicEventInterval->end() && posIter->first >= *intervalIter) {
             double genotypeRatio = (hetCountNum + homCountNum > 0) ? static_cast<double>(hetCountNum) / (homCountNum + hetCountNum) : 0.0;
             if (hetCountNum + homCountNum > 0){
                 if (genotypeRatio < 0.09){
@@ -1695,10 +1706,14 @@ void Clip::detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegmen
                 intervalIter++;
             }
         }
-        while (regionIter != smallGenomicEventRegion->end() - 1 && posIter->first > regionIter->second){
+        while (regionIter != smallGenomicEventRegion->end() && posIter->first > regionIter->second){
             regionIter++;
         }
-        if (posIter->first > regionIter->first || posIter->first < regionIter->second){
+        if (regionIter != smallGenomicEventRegion->end()){
+            filterStart = regionIter->first;
+            filterEnd = regionIter->second;
+        }
+        if (posIter->first < filterStart || posIter->first > filterEnd){
             if (posIter->second.vaf >= 0.8 || posIter->second.homozygous){
                 homCountNum++;
             }else {
