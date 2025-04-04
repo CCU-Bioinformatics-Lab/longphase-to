@@ -136,7 +136,7 @@ struct VariantEdge{
     std::map<int, std::map<int, ThreePointEdge>> *edgeCount;
     int refcnt ; // count the ref base amount
     int altcnt ; // count the alt base amount
-    double vaf ; // count the vaf of the left snp
+    double vaf = 0; // count the vaf of the left snp
     int coverage ; // count the coverge on the snp
     
     VariantEdge(int currPos);

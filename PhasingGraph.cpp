@@ -602,7 +602,9 @@ void VairiantGraph::destroy(){
         delete edgeIter->second->ref;
         delete edgeIter->second->alt;
         delete edgeIter->second->edgeCount;
+        delete edgeIter->second;
     }
+    edgeList->clear();
     
     delete variantPosType;
     delete edgeList;

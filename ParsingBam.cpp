@@ -25,7 +25,6 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
     fai = fai_load(fastaFile.c_str());
     
     // iterating all chr
-    #pragma omp parallfel for schedule(dynamic) num_threads(numThreads)
     for(std::vector<std::string>::iterator iter = chrName.begin() ; iter != chrName.end() ; iter++){
         
         int index = iter - chrName.begin();
@@ -40,14 +39,16 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
         int ref_len = 0;
 
         // read file
-        std::string chr_info(faidx_fetch_seq(fai , (*iter).c_str() , 0 , last_pos.at(index)+5 , &ref_len));
+        char *seq_ptr = faidx_fetch_seq(fai , (*iter).c_str() , 0 , last_pos.at(index)+5 , &ref_len);
         if(ref_len == 0){
             std::cout<<"nothing in reference file \n";
         }
 
         // update map
-        chrString[(*iter)] = chr_info;
+        chrString[(*iter)] = std::string(seq_ptr);
+        free(seq_ptr);
     }
+    fai_destroy(fai);
 }
 
 FastaParser::~FastaParser(){
@@ -482,6 +483,10 @@ SnpParser::SnpParser(PhasingParameters &in_params){
             }
         }
     }
+    bcf_destroy(rec);
+    bcf_hdr_destroy(hdr);
+    bcf_close(inf);
+    free(seqnames);
 }
 
 SnpParser::SnpParser(const std::string &ponFile, const std::string &strictPonFile, bool parserIndel) 
@@ -748,7 +753,7 @@ void SnpParser::fetchAndValidateTag(const int checkTag, const char *tag, hts_pos
 }
 
 VariantGenotype SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos){
-    
+    VariantGenotype result = GENOTYPE_UNDEFINED;
     int ngt_arr = 0;
     int *gt = NULL;
     int checkTag = bcf_get_format_int32(hdr, line, tag, &gt, &ngt_arr);
@@ -758,17 +763,16 @@ VariantGenotype SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line,
     if ((gt[0] == 2 && gt[1] == 4) || (gt[0] == 4 && gt[1] == 2) || // 0/1, 1/0
         (gt[0] == 2 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 3) || // 0|1, 1|0
         (gt[0] == 0 && gt[1] == 3) || (gt[0] == 2 && gt[1] == 1)) { // .|0, 0|.
-        return HET;
+        result = HET;
     }
     // homozygous SNP
     else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
              (gt[0] == 4 && gt[1] == 5) || // 1|1
              (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1)) { // .|1, 1|.
-        return HOM;
+        result = HOM;
     }
-    else {
-        return GENOTYPE_UNDEFINED;
-    }
+    free(gt);
+    return result;
 }
 
 float SnpParser::getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos){
@@ -1224,6 +1228,7 @@ void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool,
         hts_idx_destroy(idx);
         bam_hdr_destroy(bamHdr);
         bam_destroy1(aln);
+        hts_itr_destroy(iter);
         sam_close(fp_in);
     }
     
