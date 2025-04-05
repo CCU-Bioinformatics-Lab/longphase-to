@@ -778,10 +778,12 @@ VariantGenotype SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line,
 float SnpParser::getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos){
     
     int nvaf_arr = 0;
-    float *vaf = nullptr;
-    int checkTag = bcf_get_format_float(hdr, line, tag, &vaf, &nvaf_arr);
+    float *vaf_ptr = nullptr;
+    int checkTag = bcf_get_format_float(hdr, line, tag, &vaf_ptr, &nvaf_arr);
     fetchAndValidateTag(checkTag, tag, pos);
-    return vaf[0];
+    float vaf = vaf_ptr[0];
+    free(vaf_ptr);
+    return vaf;
 }
 
 void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, float vaf, VariantGenotype parserType, std::map<std::string, std::map<int, RefAlt> > *chrVariant) {
@@ -1145,7 +1147,7 @@ bool SVParser::findSV(std::string chr, int position){
 
 BamParser::BamParser(std::string inputChrName, std::vector<std::string> inputBamFileVec, SnpParser &snpMap, SVParser &svFile, METHParser &modFile, const std::string &ref_string):chrName(inputChrName),BamFileVec(inputBamFileVec){
     
-    currentVariants = new std::map<int, RefAlt>;
+    // currentVariants = new std::map<int, RefAlt>;
     currentSV = new std::map<int, std::map<std::string ,bool> >;
     currentMod = new std::map<int, std::map<std::string ,RefAlt> >;
     
@@ -1169,6 +1171,7 @@ BamParser::BamParser(std::string inputChrName, std::vector<std::string> inputBam
 
 BamParser::~BamParser(){
     // delete currentVariants;
+    currentVariants = nullptr;
     delete currentSV;
     delete currentMod;
 }

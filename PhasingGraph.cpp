@@ -444,7 +444,7 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
                     if (isRefDominant) {
                         connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE1) ? HAPLOTYPE2 : HAPLOTYPE1;
                     } else {
-                        connectHP = (*posPhasingResult)[prevPhasedNode].refHaplotype;
+                        connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE2) ? HAPLOTYPE2 : HAPLOTYPE1;
                     }
                     if (inLOHRegion) {
                         lohIter->startAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
@@ -626,6 +626,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
     for (int readIter = 0; readIter < (int)in_readVariant->size(); readIter++) {
         int is_toDelete = 0;
         std::string readName = (*in_readVariant)[readIter].read_name;
+        if((*in_readVariant)[readIter].variantVec.empty())continue;
         int firstVariantPos = (*in_readVariant)[readIter].variantVec.front().position;
         int lastVariantPos = (*in_readVariant)[readIter].variantVec.back().position;
         auto& readRange = alignRange[readName];
@@ -1133,6 +1134,7 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
                 if(variantIter->second.origin == SOMATIC){
                     std::replace(genotype.begin(), genotype.end(), '1', '0');
                     phasingResult.genotype.insert(phasingResult.genotype.begin(), genotype);
+                    phasingResult.phaseSet.push_back(-1);
                 }
                 posPhasingResult.emplace(variantIter->first, phasingResult);
             }
@@ -1159,9 +1161,11 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
                                 result.genotype = {"0|.", "1|.", "0|."};
                             }
                         }
+                        int phaseSet = result.phaseSet.front();
+                        result.phaseSet={lastPhaseSet, phaseSet, phaseSet};
+                    }else{
+                        posPhasingResult.erase(posPhasingResultIter);
                     }
-                    int phaseSet = result.phaseSet.front();
-                    result.phaseSet={lastPhaseSet, phaseSet, phaseSet};
                 }else{
                     if(genomicEventChange){
                         genomicEventChange = false;
