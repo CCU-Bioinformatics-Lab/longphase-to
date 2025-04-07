@@ -1011,11 +1011,11 @@ void VairiantGraph::processReadVariants(std::map<int,std::map<int,std::map<doubl
             for(auto variantIter = (*readIter).variantVec.begin() ; variantIter != (*readIter).variantVec.end() ; variantIter++ ){
                 if( (*variantIter).allele == 0 || (*variantIter).allele == 1){
                     // when the mmrate is too high, we think it's a fakeRead
-                    (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]++;
-                    // if( (*readIter).fakeRead == true )
-                    //   (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]+=0.01;
-                    // else
-                    //   (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]++;
+                    // (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]++;
+                    if( (*readIter).fakeRead == true )
+                      (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]+=0.01;
+                    else
+                      (*hpAlleleCountMap)[belongHP][(*variantIter).position][(*variantIter).allele]++;
                 }
             }
         }
