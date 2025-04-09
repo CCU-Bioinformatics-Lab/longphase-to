@@ -397,7 +397,7 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
     int prevPhasedNode = -1;
     int lohStart = -1;
     int lohEnd = -1;
-    Haplotype connectHP = HAPLOTYPE_UNDEFINED;
+    Haplotype connectHP = HAPLOTYPE1;
 
     // Visit all position and assign SNPs to haplotype.
     // Avoid recording duplicate information,
@@ -441,16 +441,16 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
                 float connectAlt = aa;
                 if(connectRef + connectAlt > 0 && std::max(connectRef, connectAlt) / (connectRef + connectAlt) >= 0.8){
                     bool isRefDominant = (connectRef > connectAlt);
-                    if (isRefDominant) {
-                        connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE1) ? HAPLOTYPE2 : HAPLOTYPE1;
-                    } else {
-                        connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE2) ? HAPLOTYPE2 : HAPLOTYPE1;
-                    }
                     if (inLOHRegion) {
                         lohIter->startAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
+                        if (isRefDominant) {
+                            connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE1) ? HAPLOTYPE2 : HAPLOTYPE1;
+                        } else {
+                            connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE2) ? HAPLOTYPE2 : HAPLOTYPE1;
+                        }
                     } else {
                         (lohIter - 1)->endAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
-                        currHP = connectHP;
+                        currHP = isRefDominant ? connectHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1 : connectHP;
                     }
                     hpCountMap2->clear();
                     hpCountMap3->clear();
@@ -1119,8 +1119,8 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
             Allele connectedAllele = lohIter->startAllele;
             if(connectedAllele != Allele_UNDEFINED){
                 connectedHP = (connectedAllele == REF_ALLELE) ? 
-                            (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) :
-                            lastHP;
+                            lastHP :
+                            (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1);
                 // lastPhaseSet = lastPhaseSet;
             }else{
                 lastPhaseSet = variantIter->first;
