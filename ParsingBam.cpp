@@ -357,6 +357,7 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
             }
             resultVcf << "##longphaseVersion=" << params->version << "\n";
             resultVcf << "##commandline=\"" << params->command << "\"\n";
+            resultVcf << "##tumor_purity=" << purity << "\n";
             commandLine = true;
         }
         resultVcf << input << "\n";
@@ -604,7 +605,8 @@ int SnpParser::getLastSNP(std::string chrName){
     return (*lastVariantIter).first;
 }
 
-void SnpParser::writeResult(ChrPhasingResult &chrPhasingResult){
+void SnpParser::writeResult(ChrPhasingResult &chrPhasingResult, double purity){
+    this->purity = purity;
 
     if( params->snpFile.find("gz") != std::string::npos ){
         // .vcf.gz 

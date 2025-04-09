@@ -112,6 +112,7 @@ class BaseVairantParser{
         };
         bool commandLine;
         PhasingParameters *params;
+        double purity;
 
     public:
         BaseVairantParser();
@@ -174,7 +175,7 @@ class SnpParser : public BaseVairantParser{
         
         int getLastSNP(std::string chrName);
         
-        void writeResult(ChrPhasingResult &chrPhasingResult);
+        void writeResult(ChrPhasingResult &chrPhasingResult, double purity);
 
         bool findSNP(std::string chr, int posistion);
         
