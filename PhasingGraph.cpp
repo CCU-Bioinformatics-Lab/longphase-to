@@ -265,7 +265,7 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, Varia
 }
 
 int VairiantGraph::patternMining(ThreePointEdge threePointEdge){
-    constexpr float condition = 3;
+    constexpr float condition = 2;
     SomaticVote vote = VOTE_UNDEFINED;
 
     float largest = -1;
@@ -1789,7 +1789,7 @@ double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> 
         outputFile << q1 << "\t" << q3 << "\n";
         outputFile.close();
     }
-    double purity = -5.6435 +12.4351*q1 + 2.2520*q3 - 41.6128*q1*q1 + 49.7679*q1*q3 - 18.8315*q3*q3;
+    double purity = -39.7002 + 0.0000*1 + 186.2024*q1 - 7.7065*q3 + 107.2731*q1*q1 - 542.5673*q1*q3 + 201.2038*q3*q3 - 14.3090*q1*q1*q1 - 125.8827*q1*q1*q3 + 408.8468*q1*q3*q3 - 175.6315*q3*q3*q3;
     // Clamp the purity value between 0 and 1
     return std::max(0.0, std::min(purity, 1.0));
 }
