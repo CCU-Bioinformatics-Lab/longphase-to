@@ -442,18 +442,19 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
                 if(connectRef + connectAlt > 0 && std::max(connectRef, connectAlt) / (connectRef + connectAlt) >= 0.8){
                     bool isRefDominant = (connectRef > connectAlt);
                     if (inLOHRegion) {
-                        lohIter->startAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
+                        lohIter->startAllele = isRefDominant ? REF_ALLELE : ALT_ALLELE;
                         if (isRefDominant) {
                             connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE1) ? HAPLOTYPE2 : HAPLOTYPE1;
                         } else {
                             connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE2) ? HAPLOTYPE2 : HAPLOTYPE1;
                         }
                     } else {
-                        (lohIter - 1)->endAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
-                        currHP = isRefDominant ? connectHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1 : connectHP;
+                        (lohIter - 1)->endAllele = isRefDominant ? REF_ALLELE : ALT_ALLELE;
+                        currHP = isRefDominant ? (connectHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) : connectHP;
                     }
                     hpCountMap2->clear();
                     hpCountMap3->clear();
+                    lastConnectPos = currPos;
                 }
             }
             genomicEventChange = false;
@@ -1125,8 +1126,8 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
             Allele connectedAllele = lohIter->startAllele;
             if(connectedAllele != Allele_UNDEFINED){
                 connectedHP = (connectedAllele == REF_ALLELE) ? 
-                            lastHP :
-                            (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1);
+                            (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) :
+                            lastHP;
                 // lastPhaseSet = lastPhaseSet;
             }else{
                 lastPhaseSet = variantIter->first;
