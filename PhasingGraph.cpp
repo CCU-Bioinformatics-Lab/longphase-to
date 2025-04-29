@@ -710,7 +710,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
             }
         }
     }
-
+    std::ofstream clusterFile(params->resultPrefix + chr + ".cluster");
     std::vector<int> delPos;
     for(const auto& posAlleleCountIter : posAlleleCount) {
         const auto& alleleIter = posAlleleCountIter.second;
@@ -730,15 +730,17 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
             
             if(condition1 >= 0.5 && condition2 >= 0.6){
                 sameCount++;
-                if(sameCount == 2){
-                    break;
-                }
+                // if(sameCount == 2){
+                //     break;
+                // }
             }
         }
         if(sameCount >= 2){
             delPos.push_back(posAlleleCountIter.first);
+            clusterFile << chr << "\t" << posAlleleCountIter.first << "\t" << sameCount << "\n";
         }
     }
+    clusterFile.close();
 
     int readCount=0;
     // merge alignment
@@ -763,6 +765,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
         for( auto variant : (*readIter).variantVec ){
             readCount++;
             if(std::binary_search(delPos.begin(), delPos.end(), variant.position)){
+                // (*variantPosType)[variant.position].origin = GERMLINE;
                 continue;
             }
             if( variant.quality <= VARIANT_UNDEFINED ){
@@ -1040,6 +1043,11 @@ void VairiantGraph::calculatePloidyRatio(double hp1Ref, double hp2Ref, std::map<
 void VairiantGraph::reassignAlleleResult(std::map<int,std::map<int,std::map<double,double>>> *hpAlleleCountMap, std::map<double, int> *ploidyRatioMap) {
     double snpConfidenceThreshold = params->snpConfidence;
     std::map<int,std::map<int,int>> hpAllele;
+    std::string logFilePath = params->resultPrefix + chr + ".purity";
+    std::ofstream logFile(logFilePath, std::ofstream::out | std::ofstream::trunc);
+    if (!logFile.is_open()) {
+        std::cerr << "failed to open log file: " << logFilePath << std::endl;
+    }
     // reassign allele result
     for(auto variantIter = variantPosType->begin() ; variantIter != variantPosType->end() ; variantIter++ ){
         int position = variantIter->first;
@@ -1053,6 +1061,8 @@ void VairiantGraph::reassignAlleleResult(std::map<int,std::map<int,std::map<doub
         double hp2Ref = (*hpAlleleCountMap)[1][position][0];
         double hp2Alt = (*hpAlleleCountMap)[1][position][1];
         if(ploidyRatioMap != nullptr && posPhasingResultIter->second.somatic){
+            logFile << chr << "\t" << position << "\t" << 1 << "\t" << hp1Ref << "\t" << hp1Alt << "\t" << hp2Ref << "\t" << hp2Alt << "\t" << 1 << std::endl;
+
             calculatePloidyRatio(hp1Ref, hp2Ref, ploidyRatioMap);
         }
         double result1reads = hp1Ref + hp2Alt;
