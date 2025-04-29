@@ -915,10 +915,16 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
                         
                         if (voteTmp == LEFT_HIGH_SR || voteTmp == LEFT_HIGH_SA || voteTmp == LEFT_LOW){
                             voteResult[nodeIter->first][voteTmp]++;
+                            voteResult[nextNodeIter->first][DISAGREE]++;
+                            voteResult[nextNextNodeIter->first][DISAGREE]++;
                         } else if (voteTmp == RIGHT_HIGH_SR || voteTmp == RIGHT_HIGH_SA || voteTmp == RIGHT_LOW){
                             voteResult[nextNextNodeIter->first][voteTmp]++;
+                            voteResult[nextNodeIter->first][DISAGREE]++;
+                            voteResult[nodeIter->first][DISAGREE]++;
                         } else if (voteTmp == MID_HIGH_SR || voteTmp == MID_HIGH_SA || voteTmp == MID_LOW || voteTmp == DISAGREE){
                             voteResult[nextNodeIter->first][voteTmp]++;
+                            voteResult[nextNextNodeIter->first][DISAGREE]++;
+                            voteResult[nodeIter->first][DISAGREE]++;
                         }
                     }
                     nextNextNodeIter++;
