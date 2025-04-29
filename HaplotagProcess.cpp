@@ -178,6 +178,20 @@ void HaplotagProcess::parserProcess(std::string &input){
                         chrVariant[chr][pos].altHaplotype = HAPLOTYPE3;
                     }
                 }
+                else if( gtValue[0] == '.' && gtValue[2] == '0' ){
+                    chrVariant[chr][pos].altHaplotype = HAPLOTYPE2_1;
+                }
+                else if( gtValue[0] == '0' && gtValue[2] == '.' ){
+                    chrVariant[chr][pos].altHaplotype = HAPLOTYPE1_1;
+                }
+                else if( gtValue[0] == '1' && gtValue[2] == '.' ){
+                    chrVariant[chr][pos].refHaplotype = HAPLOTYPE2;
+                    chrVariant[chr][pos].altHaplotype = HAPLOTYPE1;
+                }
+                else if( gtValue[0] == '.' && gtValue[2] == '1' ){
+                    chrVariant[chr][pos].refHaplotype = HAPLOTYPE1;
+                    chrVariant[chr][pos].altHaplotype = HAPLOTYPE2;
+                }
             }
             // sv file
             if( parseSVFile ){
@@ -440,7 +454,7 @@ void HaplotagProcess::tagRead(HaplotagParameters &params){
             }
 
             // write this alignment to result bam file
-            // result = sam_write1(out, bamHdr, aln);
+            result = sam_write1(out, bamHdr, aln);
         }
         std::cerr<< difftime(time(NULL), begin) << "s\n";
     }
