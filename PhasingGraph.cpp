@@ -442,18 +442,19 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
                 if(connectRef + connectAlt > 0 && std::max(connectRef, connectAlt) / (connectRef + connectAlt) >= 0.8){
                     bool isRefDominant = (connectRef > connectAlt);
                     if (inLOHRegion) {
-                        lohIter->startAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
+                        lohIter->startAllele = isRefDominant ? REF_ALLELE : ALT_ALLELE;
                         if (isRefDominant) {
                             connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE1) ? HAPLOTYPE2 : HAPLOTYPE1;
                         } else {
                             connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE2) ? HAPLOTYPE2 : HAPLOTYPE1;
                         }
                     } else {
-                        (lohIter - 1)->endAllele = isRefDominant ? ALT_ALLELE : REF_ALLELE;
-                        currHP = isRefDominant ? connectHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1 : connectHP;
+                        (lohIter - 1)->endAllele = isRefDominant ? REF_ALLELE : ALT_ALLELE;
+                        currHP = isRefDominant ? (connectHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) : connectHP;
                     }
                     hpCountMap2->clear();
                     hpCountMap3->clear();
+                    lastConnectPos = currPos;
                 }
             }
             genomicEventChange = false;
@@ -866,7 +867,8 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
     if (!logFile.is_open()) {
         std::cerr << "failed to open log file: " << logFilePath << std::endl;
     }
-    std::map<int, std::array<int, 12> > voteResult;
+    std::map<int, std::array<int, 18>> voteResult;
+    std::map<int, double> totalArtifactPathRatio;
     std::map<int, VariantInfo>::iterator nodeIter;
     std::map<int, VariantInfo>::iterator nextNodeIter;
     std::map<int, VariantInfo>::iterator nextNextNodeIter;
@@ -916,18 +918,57 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
                         ThreePointEdge threePointEdge = edge->findThreePointEdge(nextNodeIter->first,nextNextNodeIter->first);
                         int voteTmp = patternMining(threePointEdge);
                         
-                        if (voteTmp == LEFT_HIGH_SR || voteTmp == LEFT_HIGH_SA || voteTmp == LEFT_LOW){
+                        if (voteTmp == LEFT_HIGH_SA_PAR || voteTmp == LEFT_HIGH_SR_PAR || voteTmp == LEFT_HIGH_SA_CR || voteTmp == LEFT_HIGH_SR_CR || 
+                            voteTmp == LEFT_LOW_SA_PAR){
                             voteResult[nodeIter->first][voteTmp]++;
                             voteResult[nextNodeIter->first][DISAGREE]++;
                             voteResult[nextNextNodeIter->first][DISAGREE]++;
-                        } else if (voteTmp == RIGHT_HIGH_SR || voteTmp == RIGHT_HIGH_SA || voteTmp == RIGHT_LOW){
+                        } else if (voteTmp == RIGHT_HIGH_SA_PAR || voteTmp == RIGHT_HIGH_SR_PAR || voteTmp == RIGHT_HIGH_SA_CR || voteTmp == RIGHT_HIGH_SR_CR || 
+                                voteTmp == RIGHT_LOW_SA_PAR){
                             voteResult[nextNextNodeIter->first][voteTmp]++;
                             voteResult[nextNodeIter->first][DISAGREE]++;
                             voteResult[nodeIter->first][DISAGREE]++;
-                        } else if (voteTmp == MID_HIGH_SR || voteTmp == MID_HIGH_SA || voteTmp == MID_LOW || voteTmp == DISAGREE){
+                        } else if (voteTmp == MID_HIGH_SA_PAR || voteTmp == MID_HIGH_SR_PAR || voteTmp == MID_HIGH_SA_CR || voteTmp == MID_HIGH_SR_CR || 
+                                   voteTmp == MID_LOW_SA_PAR || voteTmp == DISAGREE){
                             voteResult[nextNodeIter->first][voteTmp]++;
                             voteResult[nextNextNodeIter->first][DISAGREE]++;
                             voteResult[nodeIter->first][DISAGREE]++;
+                        }
+
+                        EdgeType edgeType = EDGE_RRR;
+                        if (voteTmp == LEFT_HIGH_SA_PAR || voteTmp == LEFT_HIGH_SR_PAR || voteTmp == LEFT_HIGH_SA_CR || voteTmp == LEFT_HIGH_SR_CR){
+                            if (voteTmp == LEFT_HIGH_SA_PAR){
+                                edgeType = EDGE_AAA;
+                            } else if (voteTmp == LEFT_HIGH_SR_PAR){
+                                edgeType = EDGE_ARR;
+                            } else if (voteTmp == LEFT_HIGH_SA_CR){
+                                edgeType = EDGE_AAR;
+                            } else if (voteTmp == LEFT_HIGH_SR_CR){
+                                edgeType = EDGE_ARA;
+                            }
+                            totalArtifactPathRatio[nodeIter->first] += (threePointEdge[edgeType] / (threePointEdge[EDGE_ARR]+threePointEdge[EDGE_ARA]+threePointEdge[EDGE_AAR]+threePointEdge[EDGE_AAA]));
+                        } else if (voteTmp == RIGHT_HIGH_SA_PAR || voteTmp == RIGHT_HIGH_SR_PAR || voteTmp == RIGHT_HIGH_SA_CR || voteTmp == RIGHT_HIGH_SR_CR){
+                            if (voteTmp == RIGHT_HIGH_SA_PAR){
+                                edgeType = EDGE_RRA;
+                            } else if (voteTmp == RIGHT_HIGH_SR_PAR){
+                                edgeType = EDGE_AAA;
+                            } else if (voteTmp == RIGHT_HIGH_SA_CR){
+                                edgeType = EDGE_ARA;
+                            } else if (voteTmp == RIGHT_HIGH_SR_CR){
+                                edgeType = EDGE_RAA;
+                            }
+                            totalArtifactPathRatio[nextNextNodeIter->first] += (threePointEdge[edgeType] / (threePointEdge[EDGE_RRA]+threePointEdge[EDGE_RAA]+threePointEdge[EDGE_ARA]+threePointEdge[EDGE_AAA]));
+                        } else if (voteTmp == MID_HIGH_SA_PAR || voteTmp == MID_HIGH_SR_PAR || voteTmp == MID_HIGH_SA_CR || voteTmp == MID_HIGH_SR_CR){
+                            if (voteTmp == MID_HIGH_SA_PAR){
+                                edgeType = EDGE_AAA;
+                            } else if (voteTmp == MID_HIGH_SR_PAR){
+                                edgeType = EDGE_RAR;
+                            } else if (voteTmp == MID_HIGH_SA_CR){
+                                edgeType = EDGE_AAR;
+                            } else if (voteTmp == MID_HIGH_SR_CR){
+                                edgeType = EDGE_RAA;
+                            }
+                            totalArtifactPathRatio[nextNodeIter->first] += (threePointEdge[edgeType] / (threePointEdge[EDGE_RAR]+threePointEdge[EDGE_RAA]+threePointEdge[EDGE_AAR]+threePointEdge[EDGE_AAA]));
                         }
                     }
                     nextNextNodeIter++;
@@ -941,18 +982,20 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
         auto voteResultIter = voteResult.find(nodeIter->first);
         if(voteResultIter != voteResult.end()){
             const auto& voteResultArray = voteResultIter->second;
-            int highLeftVote = voteResultArray[LEFT_HIGH_SR] + voteResultArray[LEFT_HIGH_SA];
-            int highRightVote = voteResultArray[RIGHT_HIGH_SR] + voteResultArray[RIGHT_HIGH_SA];
-            int highMidVote = voteResultArray[MID_HIGH_SR] + voteResultArray[MID_HIGH_SA];
+            int highLeftVote = voteResultArray[LEFT_HIGH_SR_CR] + voteResultArray[LEFT_HIGH_SA_PAR] + voteResultArray[LEFT_HIGH_SR_PAR] + voteResultArray[LEFT_HIGH_SA_CR];
+            int highRightVote = voteResultArray[RIGHT_HIGH_SR_PAR] + voteResultArray[RIGHT_HIGH_SA_CR] + voteResultArray[RIGHT_HIGH_SR_CR] + voteResultArray[RIGHT_HIGH_SA_PAR];
+            int highMidVote = voteResultArray[MID_HIGH_SR_CR] + voteResultArray[MID_HIGH_SA_PAR] + voteResultArray[MID_HIGH_SR_PAR] + voteResultArray[MID_HIGH_SA_CR];
             int highAllVote = highLeftVote + highRightVote + highMidVote;
-            int lowVote = voteResultArray[MID_LOW]+voteResultArray[LEFT_LOW]+voteResultArray[RIGHT_LOW];
+            int lowVote = voteResultArray[MID_LOW_SA_PAR]+voteResultArray[LEFT_LOW_SA_PAR]+voteResultArray[RIGHT_LOW_SA_PAR];
             float allLowVote = voteResultArray[DISAGREE] + lowVote;
-            logFile<< chr << "\t" << nodeIter->first << "\t" << highAllVote << "\t" << lowVote << "\t" << voteResultArray[DISAGREE] << "\n";
-            if (highAllVote > 0 || (lowVote > 0 && lowVote / allLowVote >= 0.2)) {
+            double totalRaito = totalArtifactPathRatio[nodeIter->first];
+            logFile<< chr << "\t" << nodeIter->first << "\t" << highAllVote << "\t" << lowVote << "\t" << voteResultArray[DISAGREE] << "\t" << totalRaito << "\n";
+            if((highAllVote > 0 && (totalArtifactPathRatio[nodeIter->first]/highAllVote) > 0.8) || (lowVote > 0 && (lowVote/allLowVote) >= 0.2)){
                 nodeIter->second.origin = SOMATIC;
             }
         }
     }
+    logFile.close();
 }
 
 void VairiantGraph::readCorrection(std::map<double, int> *ploidyRatioMap){
@@ -1135,8 +1178,8 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
             Allele connectedAllele = lohIter->startAllele;
             if(connectedAllele != Allele_UNDEFINED){
                 connectedHP = (connectedAllele == REF_ALLELE) ? 
-                            lastHP :
-                            (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1);
+                            (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) :
+                            lastHP;
                 // lastPhaseSet = lastPhaseSet;
             }else{
                 lastPhaseSet = variantIter->first;
@@ -1805,7 +1848,7 @@ double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> 
         outputFile << q1 << "\t" << q3 << "\n";
         outputFile.close();
     }
-    double purity = -39.7002 + 0.0000*1 + 186.2024*q1 - 7.7065*q3 + 107.2731*q1*q1 - 542.5673*q1*q3 + 201.2038*q3*q3 - 14.3090*q1*q1*q1 - 125.8827*q1*q1*q3 + 408.8468*q1*q3*q3 - 175.6315*q3*q3*q3;
+    double purity = -5.3134 + 11.5568*q1 + 2.1985*q3 - 39.4693*q1*q1 + 47.8858*q1*q3 - 18.2485*q3*q3;
     // Clamp the purity value between 0 and 1
     return std::max(0.0, std::min(purity, 1.0));
 }
