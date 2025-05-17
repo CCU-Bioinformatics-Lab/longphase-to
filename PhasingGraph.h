@@ -28,23 +28,28 @@ enum EdgeType{
     EDGE_AAA = 7
 };
 
-// "somatic" corresponds to variable `a`
-// "confidence" corresponds to variable `b`
-// `a_b` is used for their combined representation
 enum SomaticVote{
     VOTE_UNDEFINED = 0,
-    MID_HIGH_SR = 1,
-    RIGHT_HIGH_SR = 2,
-    LEFT_HIGH_SR = 3,
+    DISAGREE = 1,
 
-    MID_HIGH_SA = 5,
-    RIGHT_HIGH_SA = 6,
-    LEFT_HIGH_SA = 7,
+    MID_HIGH_SA_PAR = 2,
+    MID_HIGH_SR_PAR = 3,
+    MID_HIGH_SR_CR = 4,
+    MID_HIGH_SA_CR = 5,
 
-    DISAGREE = 8,
-    MID_LOW = 9,
-    LEFT_LOW = 10,
-    RIGHT_LOW = 11,
+    RIGHT_HIGH_SR_PAR = 6,
+    RIGHT_HIGH_SA_PAR = 7,
+    RIGHT_HIGH_SA_CR = 8,
+    RIGHT_HIGH_SR_CR = 9,
+
+    LEFT_HIGH_SA_PAR = 10,
+    LEFT_HIGH_SR_PAR = 11,
+    LEFT_HIGH_SR_CR = 12,
+    LEFT_HIGH_SA_CR = 13,
+
+    MID_LOW_SA_PAR = 14,
+    LEFT_LOW_SA_PAR = 15,
+    RIGHT_LOW_SA_PAR = 16,
 };
 
 struct SomaticPattern {
@@ -53,26 +58,26 @@ struct SomaticPattern {
 };
 
 constexpr std::array<SomaticPattern, 12> highSomaticPatterns = {{
-    {{EDGE_RRR, EDGE_ARA, EDGE_AAA}, MID_HIGH_SA},
-    {{EDGE_RRA, EDGE_ARR, EDGE_AAR}, MID_HIGH_SA},
-    {{EDGE_ARR, EDGE_RRA, EDGE_RAA}, MID_HIGH_SR},
-    {{EDGE_ARA, EDGE_RRR, EDGE_RAR}, MID_HIGH_SR},
+    {{EDGE_RRR, EDGE_ARA, EDGE_AAA}, MID_HIGH_SA_PAR},
+    {{EDGE_RRA, EDGE_ARR, EDGE_AAR}, MID_HIGH_SA_CR},
+    {{EDGE_ARR, EDGE_RRA, EDGE_RAA}, MID_HIGH_SR_CR},
+    {{EDGE_ARA, EDGE_RRR, EDGE_RAR}, MID_HIGH_SR_PAR},
 
-    {{EDGE_RRR, EDGE_RAA, EDGE_AAA}, LEFT_HIGH_SA},
-    {{EDGE_RRA, EDGE_RAR, EDGE_AAR}, LEFT_HIGH_SA},
-    {{EDGE_RAR, EDGE_RRA, EDGE_ARA}, LEFT_HIGH_SR},
-    {{EDGE_RAA, EDGE_RRR, EDGE_ARR}, LEFT_HIGH_SR},
+    {{EDGE_RRR, EDGE_RAA, EDGE_AAA}, LEFT_HIGH_SA_PAR},
+    {{EDGE_RRA, EDGE_RAR, EDGE_AAR}, LEFT_HIGH_SA_CR},
+    {{EDGE_RAR, EDGE_RRA, EDGE_ARA}, LEFT_HIGH_SR_CR},
+    {{EDGE_RAA, EDGE_RRR, EDGE_ARR}, LEFT_HIGH_SR_PAR},
 
-    {{EDGE_RRR, EDGE_AAR, EDGE_AAA}, RIGHT_HIGH_SR},
-    {{EDGE_ARR, EDGE_RAR, EDGE_RAA}, RIGHT_HIGH_SR},
-    {{EDGE_RAR, EDGE_ARR, EDGE_ARA}, RIGHT_HIGH_SA},
-    {{EDGE_AAR, EDGE_RRR, EDGE_RRA}, RIGHT_HIGH_SA},
+    {{EDGE_RRR, EDGE_AAR, EDGE_AAA}, RIGHT_HIGH_SR_PAR},
+    {{EDGE_ARR, EDGE_RAR, EDGE_RAA}, RIGHT_HIGH_SR_CR},
+    {{EDGE_RAR, EDGE_ARR, EDGE_ARA}, RIGHT_HIGH_SA_CR},
+    {{EDGE_AAR, EDGE_RRR, EDGE_RRA}, RIGHT_HIGH_SA_PAR},
 }};
 
 constexpr std::array<SomaticPattern, 3> lowSomaticPatterns = {{
-    {{EDGE_ARA, EDGE_ARA, EDGE_AAA}, MID_LOW},
-    {{EDGE_RAA, EDGE_RAA, EDGE_AAA}, LEFT_LOW},
-    {{EDGE_AAR, EDGE_AAR, EDGE_AAA}, RIGHT_LOW},
+    {{EDGE_ARA, EDGE_ARA, EDGE_AAA}, MID_LOW_SA_PAR},
+    {{EDGE_RAA, EDGE_RAA, EDGE_AAA}, LEFT_LOW_SA_PAR},
+    {{EDGE_AAR, EDGE_AAR, EDGE_AAA}, RIGHT_LOW_SA_PAR},
 }};
 
 class SubEdge{
