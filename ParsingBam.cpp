@@ -474,13 +474,52 @@ SnpParser::SnpParser(PhasingParameters &in_params){
 
     while (bcf_read(inf, hdr, rec) == 0) {
         // snp or indel
-        if (bcf_is_snp(rec) || parserIndel) {
-            VariantGenotype parserType = confirmRequiredGT(hdr, rec, "GT", rec->pos);
-            float vaf = getVAF(hdr, rec, vafTagName, rec->pos);
+        bool is_snp = bcf_is_snp(rec);
+        if (is_snp || parserIndel) {
+            if (rec->n_allele > 2) {
+                continue;
+            }
+
+            bcf_unpack(rec, BCF_UN_FLT);
+            int n_filters = rec->d.n_flt;
+            int *filters = rec->d.flt;
+            VariantOriginType originType = ORIGIN_UNDEFINED;
+            for (int i = 0; i < n_filters; ++i) {
+                const char* filter_str = bcf_hdr_int2id(hdr, BCF_DT_ID, filters[i]);
+                if (strcmp(filter_str, "PASS") == 0) {
+                    originType = SOMATIC;
+                    break;
+                } else if (strcmp(filter_str, "PON") == 0 || strcmp(filter_str, "NonSomatic") == 0) {
+                    originType = PON;
+                    break;
+                } else if (params->caller != DEEPSOMATIC_TO || strcmp(filter_str, "GERMLINE") == 0) {
+                    originType = GERMLINE;
+                    break;
+                }
+            }
+            if (originType == ORIGIN_UNDEFINED) {
+                continue;
+            }
+            VariantGenotype parserType = GENOTYPE_UNDEFINED;
+            int variantPos = rec->pos;
+            float vaf = getVAF(hdr, rec, vafTagName, variantPos);
+            if (params->caller == DEEPSOMATIC_TO) {
+                parserType = HET;
+                // parserType = vaf <= 0.95 ? HET : HOM;
+            } else {
+                parserType = confirmRequiredGT(hdr, rec, "GT", variantPos);
+            }
             if ( parserType != GENOTYPE_UNDEFINED ) {
+                RefAlt tmp;
+                tmp.Ref = rec->d.allele[0];
+                tmp.Alt = rec->d.allele[1];
+                tmp.homozygous = parserType;
+                tmp.vaf = vaf;
+                tmp.originType = originType;
                 // get chromosome string
-                std::string chr = seqnames[rec->rid];
-                recordVariant(chr, rec, vaf, parserType, chrVariant);
+                const char* chr = seqnames[rec->rid];
+                // record
+                (*chrVariant)[chr][variantPos] = tmp;
             }
         }
     }
@@ -653,23 +692,23 @@ void SnpParser::parserProcessGermline(std::string &input){
 
     auto& chrIter = (*chrVariant)[chr];
     auto posIter = chrIter.find(pos);
-    // if the position does not exist or the variant is already marked as germline, skip
-    if (posIter == chrIter.end() || posIter->second.germline) {
+    // if the position does not exist or the variant is already marked as pon, skip
+    if (posIter == chrIter.end() || posIter->second.pon) {
         return;
     }
     RefAlt* variant = &posIter->second;
     // if allele comparison is ignored
     if (!parserAllele) {
-        variant->germline = true;
+        variant->pon = true;
         return;
     }
     // chrVariant will not store variants with multiple alleles, 
     // so there is no handling for multiple alleles here.
     auto germlineAlts = splitString(fields[ALT]);
-    // if multiple ALT alleles are present, check if any germline allele match the variant allele
+    // if multiple ALT alleles are present, check if any pon allele match the variant allele
     for (const auto & germlineAlt : germlineAlts) {
         if (variant->Alt == germlineAlt) {
-            variant->germline = true;
+            variant->pon = true;
             return;
         }
     }
@@ -786,25 +825,6 @@ float SnpParser::getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts
     float vaf = vaf_ptr[0];
     free(vaf_ptr);
     return vaf;
-}
-
-void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, float vaf, VariantGenotype parserType, std::map<std::string, std::map<int, RefAlt> > *chrVariant) {
-    // position is 0-base
-    int variantPos = rec->pos;
-    // get r alleles
-    RefAlt tmp;
-    tmp.Ref = rec->d.allele[0];
-    tmp.Alt = rec->d.allele[1];
-    tmp.homozygous = parserType;
-    tmp.vaf = vaf;
-    
-    //prevent the MAVs calling error which makes the GT=0/1
-    if ( rec->d.allele[1][tmp.Alt.size()+1] != '\0' ){
-        return;
-    }
-    
-    // record 
-    (*chrVariant)[chr][variantPos] = tmp;
 }
 
 std::vector<std::string> SnpParser::splitString(const std::string &input) {

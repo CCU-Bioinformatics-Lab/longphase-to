@@ -16,6 +16,7 @@ struct PhasingParameters
     std::string strictPonFile="";
     std::string fastaFile;
     std::string resultPrefix;
+    Caller caller;
     bool generateDot;
     bool isONT;
     bool isPB;

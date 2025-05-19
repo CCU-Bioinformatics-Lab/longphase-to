@@ -872,8 +872,8 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
 
     for(nodeIter = variantPosType->begin() ; nodeIter != variantPosType->end() ; nodeIter++ ){
         auto variantIter = variants->find(nodeIter->first);
-        if(variantIter->second.germline){
-            nodeIter->second.origin = GERMLINE;
+        if(variantIter->second.pon){
+            nodeIter->second.origin = PON;
         }
         if (nodeIter->second.homozygous) {
             continue;
@@ -973,7 +973,7 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
             }
             nextNodeIter++;
         }
-        if(nodeIter->second.origin == GERMLINE){
+        if(nodeIter->second.origin == PON){
             continue;
         }
         auto voteResultIter = voteResult.find(nodeIter->first);
@@ -1136,7 +1136,7 @@ void VairiantGraph::reassignAlleleResult(std::map<int,std::map<int,std::map<doub
 
 void VairiantGraph::convertNonGermlineToSomatic() {
     for(auto variantIter = variantPosType->begin(); variantIter != variantPosType->end(); variantIter++) {
-        if(variantIter->second.origin != GERMLINE) {
+        if(variantIter->second.origin != PON) {
             variantIter->second.origin = SOMATIC;
         }
     }

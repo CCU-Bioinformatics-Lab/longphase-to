@@ -11,12 +11,6 @@ typedef std::map<std::string, int> ReadBaseMap;
 // rrr, rra, rar, raa, arr, ara, arr, aar, aaa
 using ThreePointEdge = std::array<float, 2*2*2>;
 
-enum VariantOriginType{
-    GERMLINE = 0,
-    SOMATIC = 1,
-    ORIGIN_UNDEFINED = -1
-};
-
 enum EdgeType{
     EDGE_RRR = 0,
     EDGE_RRA = 1,
@@ -131,7 +125,7 @@ struct VoteResult{
 struct VariantInfo {
     VariantType type;
     bool homozygous; // 0 heterozygous 1 homozygous
-    VariantOriginType origin = ORIGIN_UNDEFINED; // 0 germline 1 somatic -1 unknown
+    VariantOriginType origin = ORIGIN_UNDEFINED; // 0 pon 1 somatic 2 germline -1 unknown
 };
 
 struct VariantEdge{

@@ -48,6 +48,20 @@ enum VariantGenotype {
     GENOTYPE_UNDEFINED = -1, // undefined genotype
 };
 
+enum VariantOriginType{
+    ORIGIN_UNDEFINED = -1,
+    PON = 0,
+    SOMATIC = 1,
+    GERMLINE = 2,
+};
+
+enum Caller {
+    CALLER_UNDEFINED = -1,
+    DEEPSOMATIC_TO = 0,
+    CLAIRS_TO_SS = 1,
+    CLAIRS_TO_SSRS = 2,
+};
+
 enum ClipFrontBack {
     FRONT = 0,
     BACK = 1

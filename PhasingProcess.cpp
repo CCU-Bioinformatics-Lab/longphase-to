@@ -28,6 +28,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     std::cerr<< "\n";
     std::cerr<< "--- Phasing Parameter --- \n";
     std::cerr<< "Seq Platform       : " << ( params.isONT ? "ONT" : "PB" ) << "\n";
+    std::cerr<< "Caller             : " << ( params.caller == DEEPSOMATIC_TO ? "_TO" : (params.caller == CLAIRS_TO_SS ? "ClairS_TO_SS" : "ClairS_TO_SSRS") ) << "\n";
     std::cerr<< "Phase Indel        : " << ( params.phaseIndel ? "True" : "False" )  << "\n";
     std::cerr<< "Distance Threshold : " << params.distance        << "\n";
     std::cerr<< "Connect Adjacent   : " << params.connectAdjacent << "\n";
@@ -161,7 +162,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     double purity = PurityCalculator::getPurity(mergedPloidyRatioMap, params.resultPrefix);
     std::cerr << std::endl;
     std::cerr << "purity: " << purity << std::endl;
-    bool highPurity = purity > 0.95;
+    bool highPurity = purity > 2;
     if(highPurity){
         std::cerr << "second round phasing, ";
     }
@@ -175,7 +176,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
 
         VairiantGraph *vGraph = chrInfo.vGraph;
         if(highPurity){
-            // convert non-germline variants to somatic variants
+            // convert non-pon variants to somatic variants
             vGraph->convertNonGermlineToSomatic();
             // reset phasing result
             chrInfo.posPhasingResult = PosPhasingResult();
