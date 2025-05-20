@@ -872,7 +872,7 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
 
     for(nodeIter = variantPosType->begin() ; nodeIter != variantPosType->end() ; nodeIter++ ){
         auto variantIter = variants->find(nodeIter->first);
-        if(variantIter->second.pon){
+        if(variantIter->second.originType == PON){
             nodeIter->second.origin = PON;
         }
         if (nodeIter->second.homozygous) {
@@ -993,6 +993,15 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
         }
     }
     logFile.close();
+}
+
+void VairiantGraph::tagSomatic(std::map<int, RefAlt>* variants){
+    for(auto nodeIter = variantPosType->begin() ; nodeIter != variantPosType->end() ; nodeIter++ ){
+        auto variantIter = variants->find(nodeIter->first);
+        if(variantIter->second.originType == SOMATIC){
+            nodeIter->second.origin = SOMATIC;
+        }
+    }
 }
 
 void VairiantGraph::readCorrection(std::map<double, int> *ploidyRatioMap){

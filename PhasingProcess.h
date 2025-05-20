@@ -16,11 +16,14 @@ struct PhasingParameters
     std::string strictPonFile="";
     std::string fastaFile;
     std::string resultPrefix;
+    std::string callerStr;
     Caller caller;
     bool generateDot;
     bool isONT;
     bool isPB;
     bool phaseIndel;
+    bool disablePonTag=true;
+    bool disableCalling=false;
     bool outputLOH = false;  // Whether to output LOH results
     bool outputSGE = false;  // Whether to output SmallGenomicEvent results
     bool outputLGE = false;  // Whether to output LargeGenomicEvent results

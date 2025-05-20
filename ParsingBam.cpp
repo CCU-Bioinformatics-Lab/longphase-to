@@ -490,12 +490,15 @@ SnpParser::SnpParser(PhasingParameters &in_params){
                     originType = SOMATIC;
                     break;
                 } else if (strcmp(filter_str, "PON") == 0 || strcmp(filter_str, "NonSomatic") == 0) {
+                    originType = (!params->disablePonTag) ? PON : GERMLINE;
+                    break;
+                } else if (strcmp(filter_str, "GERMLINE") == 0) {
                     originType = PON;
                     break;
-                } else if (params->caller != DEEPSOMATIC_TO || strcmp(filter_str, "GERMLINE") == 0) {
-                    originType = GERMLINE;
-                    break;
                 }
+            }
+            if (originType == ORIGIN_UNDEFINED && params->caller != DEEPSOMATIC_TO){
+                originType = GERMLINE;
             }
             if (originType == ORIGIN_UNDEFINED) {
                 continue;
@@ -504,8 +507,7 @@ SnpParser::SnpParser(PhasingParameters &in_params){
             int variantPos = rec->pos;
             float vaf = getVAF(hdr, rec, vafTagName, variantPos);
             if (params->caller == DEEPSOMATIC_TO) {
-                parserType = HET;
-                // parserType = vaf <= 0.95 ? HET : HOM;
+                parserType = vaf <= 0.95 ? HET : HOM;
             } else {
                 parserType = confirmRequiredGT(hdr, rec, "GT", variantPos);
             }
@@ -693,13 +695,13 @@ void SnpParser::parserProcessGermline(std::string &input){
     auto& chrIter = (*chrVariant)[chr];
     auto posIter = chrIter.find(pos);
     // if the position does not exist or the variant is already marked as pon, skip
-    if (posIter == chrIter.end() || posIter->second.pon) {
+    if (posIter == chrIter.end() || posIter->second.originType == PON) {
         return;
     }
     RefAlt* variant = &posIter->second;
     // if allele comparison is ignored
     if (!parserAllele) {
-        variant->pon = true;
+        variant->originType = PON;
         return;
     }
     // chrVariant will not store variants with multiple alleles, 
@@ -708,7 +710,7 @@ void SnpParser::parserProcessGermline(std::string &input){
     // if multiple ALT alleles are present, check if any pon allele match the variant allele
     for (const auto & germlineAlt : germlineAlts) {
         if (variant->Alt == germlineAlt) {
-            variant->pon = true;
+            variant->originType = PON;
             return;
         }
     }

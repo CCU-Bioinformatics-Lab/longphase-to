@@ -31,8 +31,8 @@ static const char *CORRECT_USAGE_MESSAGE =
 "   --ge                                   output all GenomicEvent results. default: False\n\n"
 
 "somatic arguments:\n"
-"   --calling                              enable longphase calling mode. default: True\n"
-"   --pon-tag                              use PON tag to determine germline variants. default: True\n"
+"   --disable-calling                      disable longphase calling mode. default: False\n"
+"   --disable-pon-tag                      disable reading the VCF FILTER field PON to determine germline variants. default: False\n"
 "   --pon-file=NAME                        input PON VCF file. determines germline variants using position-based matching.\n"
 "                                          input format: A.vcf,B.vcf\n"
 "   --strict-pon-file=NAME                 input PON VCF file. determines germline variants using both position and ALT allele matching.\n"
@@ -60,7 +60,7 @@ static const char *CORRECT_USAGE_MESSAGE =
 
 static const char* shortopts = "s:b:o:t:r:d:1:a:q:x:p:e:n:m:L:c:i:";
 
-enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT, OUTPUT_LOH, OUTPUT_SGE, OUTPUT_LGE, OUTPUT_GE};
+enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT, OUTPUT_LOH, OUTPUT_SGE, OUTPUT_LGE, OUTPUT_GE, DISABLE_PON_TAG, DISABLE_CALLING};
 
 static const struct option longopts[] = { 
     { "help",                 no_argument,        NULL, OPT_HELP },
@@ -78,6 +78,8 @@ static const struct option longopts[] = {
     { "pon-file",             required_argument,  NULL, PON_FILE },
     { "strict-pon-file",      required_argument,  NULL, STRICT_PON_FILE },
     { "somaticConnectAdjacent", required_argument,  NULL, SOMATIC_CONNECT_ADJACENT },
+    { "disable-pon-tag",      no_argument,        NULL, DISABLE_PON_TAG },
+    { "disable-calling",      no_argument,        NULL, DISABLE_CALLING },
     { "reference",            required_argument,  NULL, 'r' },
     { "snp-file",             required_argument,  NULL, 's' },
     { "bam-file",             required_argument,  NULL, 'b' },
@@ -115,6 +117,8 @@ namespace opt
     static bool isONT=false;
     static bool isPB=false;
     static bool phaseIndel=false;
+    static bool disablePonTag=false;
+    static bool disableCalling=false;
     
     static int connectAdjacent = 35;
     static int mappingQuality = 1;
@@ -183,6 +187,8 @@ void PhasingOptions(int argc, char** argv)
         case OUTPUT_SGE: opt::outputSGE=true; break;
         case OUTPUT_LGE: opt::outputLGE=true; break;
         case OUTPUT_GE: opt::outputGE=true; break;
+        case DISABLE_PON_TAG: opt::disablePonTag=true; break;
+        case DISABLE_CALLING: opt::disableCalling=true; break;
         case OPT_HELP:
             std::cout << CORRECT_USAGE_MESSAGE;
             exit(EXIT_SUCCESS);
@@ -340,6 +346,10 @@ void PhasingOptions(int argc, char** argv)
         die = true;
     }
 
+    if(opt::disableCalling){
+        opt::somaticConnectAdjacent = 0;
+    }
+
     if (die)
     {
         std::cerr << "\n" << CORRECT_USAGE_MESSAGE;
@@ -368,6 +378,9 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     ecParams.isPB=opt::isPB;
     ecParams.phaseIndel=opt::phaseIndel;
     ecParams.caller=opt::caller;
+    ecParams.callerStr=opt::callerStr;
+    ecParams.disablePonTag=opt::disablePonTag;
+    ecParams.disableCalling=opt::disableCalling;
     
     ecParams.connectAdjacent=opt::connectAdjacent;
     ecParams.mappingQuality=opt::mappingQuality;

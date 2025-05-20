@@ -33,7 +33,6 @@ struct RefAlt{
     bool is_reverse;
     bool is_modify;
     bool is_danger;
-    bool pon = false;
     bool homozygous;
     VariantOriginType originType;
 };

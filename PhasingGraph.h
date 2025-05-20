@@ -223,11 +223,13 @@ class VairiantGraph{
         
         void phasingProcess(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments, std::map<double, int> *ploidyRatioMap);
 
+        void somaticCalling(std::map<int, RefAlt>* variants);
+
+        void tagSomatic(std::map<int, RefAlt>* variants);
+
         void convertNonGermlineToSomatic();
 
         void exportPhasingResult(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments);
-
-        void somaticCalling(std::map<int, RefAlt>* variants);
         
         void writingDotFile(std::string dotPrefix);
         std::map<std::string,int>* getReadHP();
