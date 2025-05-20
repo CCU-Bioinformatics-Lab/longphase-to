@@ -1142,6 +1142,7 @@ void VairiantGraph::reassignAlleleResult(std::map<int,std::map<int,std::map<doub
             }
         }
     }
+    logFile.close();
 }
 
 void VairiantGraph::convertNonGermlineToSomatic() {
