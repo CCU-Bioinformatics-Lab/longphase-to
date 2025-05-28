@@ -49,6 +49,7 @@ class FastaParser{
         
         // chrName, chr string
         std::map<std::string, std::string > chrString;
+        std::map<std::string, int > chrLength;
     
 };
 

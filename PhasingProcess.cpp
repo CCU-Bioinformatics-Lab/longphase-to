@@ -163,7 +163,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     for (const auto& chrInfo : chrInfoMap) {
         mergedPloidyRatioMap[chrInfo.first] = chrInfo.second.ploidyRatioMap;
     }
-    double purity = PurityCalculator::getPurity(mergedPloidyRatioMap, params.resultPrefix);
+    double purity = PurityCalculator::getPurity(mergedPloidyRatioMap, params.resultPrefix, params.caller, chrInfoMap, fastaParser.chrLength);
     std::cerr << std::endl;
     std::cerr << "purity: " << purity << std::endl;
     bool highPurity = purity > 0.95;

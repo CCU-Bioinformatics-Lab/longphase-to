@@ -311,8 +311,9 @@ class PurityCalculator {
         static std::map<double, int> mergeDistributionMap(const std::map<std::string, std::map<double, int>>& data);
         static int getTotalCount(const std::map<double, int>& data);
         static double findQuartile(const std::map<double, int>& data, double targetPos);
+        static double getLOHRatio(std::map<std::string, ChrInfo> &chrInfo, std::map<std::string, int> &chrLength);
     public:
-        static double getPurity(std::map<std::string, std::map<double, int>> &inChrDistributionMap, std::string &output_root_path);
+        static double getPurity(std::map<std::string, std::map<double, int>> &inChrDistributionMap, std::string &output_root_path, Caller caller, std::map<std::string, ChrInfo> &chrInfo, std::map<std::string, int> &chrLength);
 };
 
 #endif

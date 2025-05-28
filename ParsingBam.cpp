@@ -17,8 +17,10 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
     last_pos(last_pos)
 {
     // init map
-    for(std::vector<std::string>::iterator iter = chrName.begin() ; iter != chrName.end() ; iter++)
+    for(std::vector<std::string>::iterator iter = chrName.begin() ; iter != chrName.end() ; iter++){
+        chrLength.insert(std::make_pair( (*iter) , 0));
         chrString.insert(std::make_pair( (*iter) , ""));
+    }
 
     // load reference index
     faidx_t *fai = NULL;
@@ -43,6 +45,7 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
         if(ref_len == 0){
             std::cout<<"nothing in reference file \n";
         }
+        chrLength[(*iter)] = ref_len;
 
         // update map
         chrString[(*iter)] = std::string(seq_ptr);
