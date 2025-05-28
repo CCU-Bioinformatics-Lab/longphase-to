@@ -95,8 +95,11 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     if (!(threadPool.pool = hts_tpool_init(params.numThreads))) {
         fprintf(stderr, "Error creating thread pool\n");
     }
-
-    std::cerr << "parsing BAM, somatic calling, and phasing" << std::endl;
+    if (!params.disableCalling){
+        std::cerr << "parsing BAM, somatic calling, and phasing" << std::endl;
+    }else{
+        std::cerr << "parsing BAM, and phasing" << std::endl;
+    }
     begin = time(NULL);
     
     // loop all chromosome
