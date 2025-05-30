@@ -862,6 +862,11 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
 }
 
 void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
+    std::string logFilePath = params->resultPrefix + chr + ".somatic";
+    std::ofstream logFile(logFilePath, std::ofstream::out | std::ofstream::trunc);
+    if (!logFile.is_open()) {
+        std::cerr << "failed to open log file: " << logFilePath << std::endl;
+    }
     std::map<int, std::array<int, 18>> voteResult;
     std::map<int, double> totalArtifactPathRatio;
     std::map<int, VariantInfo>::iterator nodeIter;
@@ -984,11 +989,13 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
             int lowVote = voteResultArray[MID_LOW_SA_PAR]+voteResultArray[LEFT_LOW_SA_PAR]+voteResultArray[RIGHT_LOW_SA_PAR];
             float allLowVote = voteResultArray[DISAGREE] + lowVote;
             double totalRaito = totalArtifactPathRatio[nodeIter->first];
-            if((highAllVote > 0 && (totalRaito/highAllVote) > 0.8) || (lowVote > 0 && (lowVote/allLowVote) >= 0.2)){
+            logFile<< chr << "\t" << nodeIter->first << "\t" << highAllVote << "\t" << lowVote << "\t" << voteResultArray[DISAGREE] << "\t" << totalRaito << "\n";
+            if((highAllVote > 0 && (totalArtifactPathRatio[nodeIter->first]/highAllVote) > 0.8) || (lowVote > 0 && (lowVote/allLowVote) >= 0.2)){
                 nodeIter->second.origin = SOMATIC;
             }
         }
     }
+    logFile.close();
 }
 
 void VairiantGraph::tagSomatic(std::map<int, RefAlt>* variants){
@@ -1867,6 +1874,11 @@ double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> 
     int totalCount = getTotalCount(distributionSumMap);
     double q1 = findQuartile(distributionSumMap, 0.25 * (totalCount + 1));
     double q3 = findQuartile(distributionSumMap, 0.75 * (totalCount + 1));
+    std::ofstream outputFile(output_root_path + ".q1_q3");
+    if (outputFile.is_open()) {
+        outputFile << q1 << "\t" << q3 << "\t" << lohRatio << "\n";
+        outputFile.close();
+    }
     double purity = 0;
     if (caller == DEEPSOMATIC_TO){
         purity = -11.5226 + 0.0000*1 + 41.7073*q1 - 5.1209*q3 + 3.1480*lohRatio - 52.2663*q1*q1 + 32.6940*q1*q3 - 9.2913*q1*lohRatio - 8.9495*q3*q3 + 4.3016*q3*lohRatio - 1.3585*lohRatio*lohRatio;
