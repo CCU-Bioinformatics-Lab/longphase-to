@@ -862,11 +862,6 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
 }
 
 void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
-    std::string logFilePath = params->resultPrefix + chr + ".somatic";
-    std::ofstream logFile(logFilePath, std::ofstream::out | std::ofstream::trunc);
-    if (!logFile.is_open()) {
-        std::cerr << "failed to open log file: " << logFilePath << std::endl;
-    }
     std::map<int, std::array<int, 18>> voteResult;
     std::map<int, double> totalArtifactPathRatio;
     std::map<int, VariantInfo>::iterator nodeIter;
@@ -875,8 +870,8 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
 
     for(nodeIter = variantPosType->begin() ; nodeIter != variantPosType->end() ; nodeIter++ ){
         auto variantIter = variants->find(nodeIter->first);
-        if(variantIter->second.germline){
-            nodeIter->second.origin = GERMLINE;
+        if(variantIter->second.originType == PON){
+            nodeIter->second.origin = PON;
         }
         if (nodeIter->second.homozygous) {
             continue;
@@ -976,7 +971,7 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
             }
             nextNodeIter++;
         }
-        if(nodeIter->second.origin == GERMLINE){
+        if(nodeIter->second.origin == PON){
             continue;
         }
         auto voteResultIter = voteResult.find(nodeIter->first);
@@ -989,13 +984,20 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
             int lowVote = voteResultArray[MID_LOW_SA_PAR]+voteResultArray[LEFT_LOW_SA_PAR]+voteResultArray[RIGHT_LOW_SA_PAR];
             float allLowVote = voteResultArray[DISAGREE] + lowVote;
             double totalRaito = totalArtifactPathRatio[nodeIter->first];
-            logFile<< chr << "\t" << nodeIter->first << "\t" << highAllVote << "\t" << lowVote << "\t" << voteResultArray[DISAGREE] << "\t" << totalRaito << "\n";
-            if((highAllVote > 0 && (totalArtifactPathRatio[nodeIter->first]/highAllVote) > 0.8) || (lowVote > 0 && (lowVote/allLowVote) >= 0.2)){
+            if((highAllVote > 0 && (totalRaito/highAllVote) > 0.8) || (lowVote > 0 && (lowVote/allLowVote) >= 0.2)){
                 nodeIter->second.origin = SOMATIC;
             }
         }
     }
-    logFile.close();
+}
+
+void VairiantGraph::tagSomatic(std::map<int, RefAlt>* variants){
+    for(auto nodeIter = variantPosType->begin() ; nodeIter != variantPosType->end() ; nodeIter++ ){
+        auto variantIter = variants->find(nodeIter->first);
+        if(variantIter->second.originType == SOMATIC){
+            nodeIter->second.origin = SOMATIC;
+        }
+    }
 }
 
 void VairiantGraph::readCorrection(std::map<double, int> *ploidyRatioMap){
@@ -1147,7 +1149,7 @@ void VairiantGraph::reassignAlleleResult(std::map<int,std::map<int,std::map<doub
 
 void VairiantGraph::convertNonGermlineToSomatic() {
     for(auto variantIter = variantPosType->begin(); variantIter != variantPosType->end(); variantIter++) {
-        if(variantIter->second.origin != GERMLINE) {
+        if(variantIter->second.origin != PON) {
             variantIter->second.origin = SOMATIC;
         }
     }
@@ -1838,18 +1840,41 @@ double PurityCalculator::findQuartile(const std::map<double, int>& data, double 
     return prevKey;
 }
 
+double PurityCalculator::getLOHRatio(std::map<std::string, ChrInfo> &chrInfo, std::map<std::string, int> &chrLength) {
+    double totalLOHLength = 0;
+    double totalChrLength = 0;
+    
+    // Calculate total LOH length
+    for (const auto& chr : chrInfo) {
+        for (const auto& segment : chr.second.LOHSegments) {
+            totalLOHLength += (segment.end - segment.start);
+        }
+    }
+    
+    // Calculate total chromosome length
+    for (const auto& chr : chrLength) {
+        totalChrLength += chr.second;
+    }
+    
+    // Return LOH ratio
+    return totalLOHLength / totalChrLength;
+}
 
-double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> &inChrDistributionMap, std::string &output_root_path) {
+double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> &inChrDistributionMap, std::string &output_root_path, 
+                                    Caller caller, std::map<std::string, ChrInfo> &chrInfo, std::map<std::string, int> &chrLength) {
+    double lohRatio = getLOHRatio(chrInfo, chrLength);
     std::map<double, int> distributionSumMap = mergeDistributionMap(inChrDistributionMap);
     int totalCount = getTotalCount(distributionSumMap);
     double q1 = findQuartile(distributionSumMap, 0.25 * (totalCount + 1));
     double q3 = findQuartile(distributionSumMap, 0.75 * (totalCount + 1));
-    std::ofstream outputFile(output_root_path + ".q1_q3");
-    if (outputFile.is_open()) {
-        outputFile << q1 << "\t" << q3 << "\n";
-        outputFile.close();
+    double purity = 0;
+    if (caller == DEEPSOMATIC_TO){
+        purity = -11.5226 + 0.0000*1 + 41.7073*q1 - 5.1209*q3 + 3.1480*lohRatio - 52.2663*q1*q1 + 32.6940*q1*q3 - 9.2913*q1*lohRatio - 8.9495*q3*q3 + 4.3016*q3*lohRatio - 1.3585*lohRatio*lohRatio;
+    }else if (caller == CLAIRS_TO_SS){
+        purity = -11.4671 + 0.0000*1 + 23.0656*q1 + 8.6819*q3 - 14.8336*lohRatio - 20.2295*q1*q1 + 7.9094*q1*q3 - 2.6216*q1*lohRatio - 8.2929*q3*q3 + 18.2641*q3*lohRatio - 2.0730*lohRatio*lohRatio;
+    }else if (caller == CLAIRS_TO_SSRS){
+        purity = -6.8140 + 0.0000*1 + 3.7621*q1 + 11.7074*q3 - 5.7183*lohRatio - 26.4966*q1*q1 + 38.2925*q1*q3 - 3.5957*q1*lohRatio - 20.5632*q3*q3 + 8.7910*q3*lohRatio - 0.5105*lohRatio*lohRatio;
     }
-    double purity = -5.3134 + 11.5568*q1 + 2.1985*q3 - 39.4693*q1*q1 + 47.8858*q1*q3 - 18.2485*q3*q3;
     // Clamp the purity value between 0 and 1
     return std::max(0.0, std::min(purity, 1.0));
 }

@@ -28,6 +28,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     std::cerr<< "\n";
     std::cerr<< "--- Phasing Parameter --- \n";
     std::cerr<< "Seq Platform       : " << ( params.isONT ? "ONT" : "PB" ) << "\n";
+    std::cerr<< "Caller             : " << params.callerStr << "\n";
     std::cerr<< "Phase Indel        : " << ( params.phaseIndel ? "True" : "False" )  << "\n";
     std::cerr<< "Distance Threshold : " << params.distance        << "\n";
     std::cerr<< "Connect Adjacent   : " << params.connectAdjacent << "\n";
@@ -94,8 +95,11 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     if (!(threadPool.pool = hts_tpool_init(params.numThreads))) {
         fprintf(stderr, "Error creating thread pool\n");
     }
-
-    std::cerr << "parsing BAM, somatic calling, and phasing" << std::endl;
+    if (!params.disableCalling){
+        std::cerr << "parsing BAM, somatic calling, and phasing" << std::endl;
+    }else{
+        std::cerr << "parsing BAM, and phasing" << std::endl;
+    }
     begin = time(NULL);
     
     // loop all chromosome
@@ -147,8 +151,12 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         chrInfo.vGraph = vGraph;
         // trans read-snp info to edge info
         vGraph->addEdge(readVariantVec);
-        // run somatic calling algorithm
-        vGraph->somaticCalling(snpFile.getVariants((*chrIter)));
+        if(!params.disableCalling){
+            // run somatic calling algorithm
+            vGraph->somaticCalling(snpFile.getVariants((*chrIter)));
+        }else{
+            vGraph->tagSomatic(snpFile.getVariants((*chrIter)));
+        }
         // run main algorithm
         vGraph->phasingProcess(chrInfo.posPhasingResult, chrInfo.LOHSegments, &chrInfo.ploidyRatioMap);
         std::cerr<< "(" << (*chrIter) << "," << difftime(time(NULL), chrbegin) << "s)";
@@ -158,7 +166,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     for (const auto& chrInfo : chrInfoMap) {
         mergedPloidyRatioMap[chrInfo.first] = chrInfo.second.ploidyRatioMap;
     }
-    double purity = PurityCalculator::getPurity(mergedPloidyRatioMap, params.resultPrefix);
+    double purity = PurityCalculator::getPurity(mergedPloidyRatioMap, params.resultPrefix, params.caller, chrInfoMap, fastaParser.chrLength);
     std::cerr << std::endl;
     std::cerr << "purity: " << purity << std::endl;
     bool highPurity = purity > 0.95;
@@ -175,7 +183,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
 
         VairiantGraph *vGraph = chrInfo.vGraph;
         if(highPurity){
-            // convert non-germline variants to somatic variants
+            // convert non-pon variants to somatic variants
             vGraph->convertNonGermlineToSomatic();
             // reset phasing result
             chrInfo.posPhasingResult = PosPhasingResult();

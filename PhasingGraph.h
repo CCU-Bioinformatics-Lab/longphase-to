@@ -11,12 +11,6 @@ typedef std::map<std::string, int> ReadBaseMap;
 // rrr, rra, rar, raa, arr, ara, arr, aar, aaa
 using ThreePointEdge = std::array<float, 2*2*2>;
 
-enum VariantOriginType{
-    GERMLINE = 0,
-    SOMATIC = 1,
-    ORIGIN_UNDEFINED = -1
-};
-
 enum EdgeType{
     EDGE_RRR = 0,
     EDGE_RRA = 1,
@@ -131,7 +125,7 @@ struct VoteResult{
 struct VariantInfo {
     VariantType type;
     bool homozygous; // 0 heterozygous 1 homozygous
-    VariantOriginType origin = ORIGIN_UNDEFINED; // 0 germline 1 somatic -1 unknown
+    VariantOriginType origin = ORIGIN_UNDEFINED; // 0 pon 1 somatic 2 germline -1 unknown
 };
 
 struct VariantEdge{
@@ -229,11 +223,13 @@ class VairiantGraph{
         
         void phasingProcess(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments, std::map<double, int> *ploidyRatioMap);
 
+        void somaticCalling(std::map<int, RefAlt>* variants);
+
+        void tagSomatic(std::map<int, RefAlt>* variants);
+
         void convertNonGermlineToSomatic();
 
         void exportPhasingResult(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments);
-
-        void somaticCalling(std::map<int, RefAlt>* variants);
         
         void writingDotFile(std::string dotPrefix);
         std::map<std::string,int>* getReadHP();
@@ -315,8 +311,9 @@ class PurityCalculator {
         static std::map<double, int> mergeDistributionMap(const std::map<std::string, std::map<double, int>>& data);
         static int getTotalCount(const std::map<double, int>& data);
         static double findQuartile(const std::map<double, int>& data, double targetPos);
+        static double getLOHRatio(std::map<std::string, ChrInfo> &chrInfo, std::map<std::string, int> &chrLength);
     public:
-        static double getPurity(std::map<std::string, std::map<double, int>> &inChrDistributionMap, std::string &output_root_path);
+        static double getPurity(std::map<std::string, std::map<double, int>> &inChrDistributionMap, std::string &output_root_path, Caller caller, std::map<std::string, ChrInfo> &chrInfo, std::map<std::string, int> &chrLength);
 };
 
 #endif
