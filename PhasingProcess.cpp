@@ -4,7 +4,7 @@
 
 PhasingProcess::PhasingProcess(PhasingParameters params)
 {
-    std::cerr<< "LongPhase Ver " << params.version << "\n";
+    std::cerr<< "LongPhase-TO Ver " << params.version << "\n";
     std::cerr<< "\n";
     std::cerr<< "--- File Parameter --- \n";
     std::cerr<< "SNP File       : " << params.snpFile       << "\n";

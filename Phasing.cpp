@@ -25,10 +25,7 @@ static const char *CORRECT_USAGE_MESSAGE =
 "   -o, --out-prefix=NAME                  prefix of phasing result. default: result\n"
 "   --indels                               phase small indel. default: False\n"
 "   --dot                                  each contig/chromosome will generate dot file.\n"
-"   --loh                                  output LOH results. default: False\n"
-"   --sge                                  output SmallGenomicEvent results. default: False\n"
-"   --lge                                  output LargeGenomicEvent results. default: False\n"
-"   --ge                                   output all GenomicEvent results. default: False\n\n"
+"   --loh                                  output LOH results. default: False\n\n"
 
 "somatic arguments:\n"
 "   --disable-calling                      disable longphase calling mode. default: False\n"
