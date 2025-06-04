@@ -10,18 +10,31 @@ static const char *CORRECT_USAGE_MESSAGE =
 "Usage: "  " " SUBPROGRAM " [OPTION] ... READSFILE\n"
 "   --help                                 display this help and exit.\n\n"
 "require arguments:\n"
-"   -s, --snp-file=NAME                    input SNP vcf file.\n"
+"   -s, --snp-file=NAME                    input SNP vcf file, or a VCF file with both SNPs and indels.\n"
 "   -b, --bam-file=NAME                    input bam file.\n"
 "   -r, --reference=NAME                   reference fasta.\n"
 "   --ont, --pb                            ont: Oxford Nanopore genomic reads.\n"
-"                                          pb: PacBio HiFi/CCS genomic reads.\n\n"
+"                                          pb: PacBio HiFi/CCS genomic reads.\n"
+"   -c, --caller=NAME                      variant caller name.\n"
+"                                          options: clairs_to_ss, clairs_to_ssrs, deepsomatic_to\n\n"
+
 "optional arguments:\n"
 "   --sv-file=NAME                         input SV vcf file.\n"
 "   --mod-file=NAME                        input modified vcf file.(produce by longphase modcall)\n"
 "   -t, --threads=Num                      number of thread. default:1\n"
 "   -o, --out-prefix=NAME                  prefix of phasing result. default: result\n"
 "   --indels                               phase small indel. default: False\n"
-"   --dot                                  each contig/chromosome will generate dot file. \n\n"
+"   --dot                                  each contig/chromosome will generate dot file.\n"
+"   --loh                                  output LOH results. default: False\n\n"
+
+"somatic arguments:\n"
+"   --disable-calling                      disable longphase calling mode. default: False\n"
+"   --disable-pon-tag                      disable reading the VCF FILTER field PON to determine germline variants. default: False\n"
+"   --pon-file=NAME                        input PON VCF file. determines germline variants using position-based matching.\n"
+"                                          input format: A.vcf,B.vcf\n"
+"   --strict-pon-file=NAME                 input PON VCF file. determines germline variants using both position and ALT allele matching.\n"
+"                                          input format: A.vcf,B.vcf\n"
+"   --somaticConnectAdjacent=Num           connect adjacent N SNPs. default:6\n\n"
 
 "parse alignment arguments:\n"
 "   -q, --mappingQuality=Num               filter alignment if mapping quality is lower than threshold. default:1\n"
@@ -35,18 +48,16 @@ static const char *CORRECT_USAGE_MESSAGE =
 "   -d, --distance=Num                     phasing two variant if distance less than threshold. default:300000\n"
 "   -1, --edgeThreshold=[0~1]              give up SNP-SNP phasing pair if the number of reads of the \n"
 "                                          two combinations are similar. default:0.7\n"
-"   -L, --overlapThreshold=[0~1]           filtering different alignments of the same read if there is overlap. default:0.2 \n"
+"   -L, --overlapThreshold=[0~1]           filtering different alignments of the same read if there is overlap. default:0.2 \n\n"
 
 
 "haplotag read correction arguments:\n"
 "   -m, --readConfidence=[0.5~1]           The confidence of a read being assigned to any haplotype. default:0.65\n"
-"   -n, --snpConfidence=[0.5~1]            The confidence of assigning two alleles of a SNP to different haplotypes. default:0.75\n"
+"   -n, --snpConfidence=[0.5~1]            The confidence of assigning two alleles of a SNP to different haplotypes. default:0.75\n\n";
 
-"\n";
+static const char* shortopts = "s:b:o:t:r:d:1:a:q:x:p:e:n:m:L:c:i:";
 
-static const char* shortopts = "s:b:o:t:r:d:1:a:q:x:p:e:n:m:L:";
-
-enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION};
+enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT, OUTPUT_LOH, OUTPUT_SGE, OUTPUT_LGE, OUTPUT_GE, DISABLE_PON_TAG, DISABLE_CALLING};
 
 static const struct option longopts[] = { 
     { "help",                 no_argument,        NULL, OPT_HELP },
@@ -55,8 +66,17 @@ static const struct option longopts[] = {
     { "pb",                   no_argument,        NULL, IS_PB }, 
     { "version",              no_argument,        NULL, VERSION }, 
     { "indels",               no_argument,        NULL, PHASE_INDEL },   
+    { "loh",                  no_argument,        NULL, OUTPUT_LOH },
+    { "sge",                  no_argument,        NULL, OUTPUT_SGE },
+    { "lge",                  no_argument,        NULL, OUTPUT_LGE },
+    { "ge",                   no_argument,        NULL, OUTPUT_GE },
     { "sv-file",              required_argument,  NULL, SV_FILE },  
     { "mod-file",             required_argument,  NULL, MOD_FILE },
+    { "pon-file",             required_argument,  NULL, PON_FILE },
+    { "strict-pon-file",      required_argument,  NULL, STRICT_PON_FILE },
+    { "somaticConnectAdjacent", required_argument,  NULL, SOMATIC_CONNECT_ADJACENT },
+    { "disable-pon-tag",      no_argument,        NULL, DISABLE_PON_TAG },
+    { "disable-calling",      no_argument,        NULL, DISABLE_CALLING },
     { "reference",            required_argument,  NULL, 'r' },
     { "snp-file",             required_argument,  NULL, 's' },
     { "bam-file",             required_argument,  NULL, 'b' },
@@ -72,6 +92,7 @@ static const struct option longopts[] = {
     { "snpConfidence",        required_argument,  NULL, 'n' },
     { "readConfidence",       required_argument,  NULL, 'm' },
     { "overlapThreshold",     required_argument,  NULL, 'L' },
+    { "caller",               required_argument,  NULL, 'c' },
     { NULL, 0, NULL, 0 }
 };
 
@@ -82,13 +103,19 @@ namespace opt
     static std::string snpFile="";
     static std::string svFile="";
     static std::string modFile="";
+    static std::string ponFile="";
+    static std::string strictPonFile="";
     static std::vector<std::string> bamFile;
     static std::string fastaFile="";
     static std::string resultPrefix="result";
+    static std::string callerStr="";
+    static Caller caller = CALLER_UNDEFINED;
     static bool generateDot=false;
     static bool isONT=false;
     static bool isPB=false;
     static bool phaseIndel=false;
+    static bool disablePonTag=false;
+    static bool disableCalling=false;
     
     static int connectAdjacent = 35;
     static int mappingQuality = 1;
@@ -105,6 +132,13 @@ namespace opt
     static double overlapThreshold = 0.2;
 
     static std::string command;
+
+    static int somaticConnectAdjacent = 6;
+
+    static bool outputLOH = false;
+    static bool outputSGE = false;
+    static bool outputLGE = false;
+    static bool outputGE = true;
 }
 
 void PhasingOptions(int argc, char** argv)
@@ -131,6 +165,7 @@ void PhasingOptions(int argc, char** argv)
         case 'n': arg >> opt::snpConfidence; break;
         case 'm': arg >> opt::readConfidence; break;
         case 'L': arg >> opt::overlapThreshold; break;
+        case 'c': arg >> opt::callerStr; break;
         case 'b': {
             std::string bamFile;
             arg >> bamFile;
@@ -142,7 +177,15 @@ void PhasingOptions(int argc, char** argv)
         case DOT_FILE: opt::generateDot=true; break;
         case IS_ONT: opt::isONT=true; break;
         case IS_PB: opt::isPB=true; break;
-        
+        case PON_FILE: arg >> opt::ponFile; break;
+        case STRICT_PON_FILE: arg >> opt::strictPonFile; break;
+        case SOMATIC_CONNECT_ADJACENT: arg >> opt::somaticConnectAdjacent; break;
+        case OUTPUT_LOH: opt::outputLOH=true; break;
+        case OUTPUT_SGE: opt::outputSGE=true; break;
+        case OUTPUT_LGE: opt::outputLGE=true; break;
+        case OUTPUT_GE: opt::outputGE=true; break;
+        case DISABLE_PON_TAG: opt::disablePonTag=true; break;
+        case DISABLE_CALLING: opt::disableCalling=true; break;
         case OPT_HELP:
             std::cout << CORRECT_USAGE_MESSAGE;
             exit(EXIT_SUCCESS);
@@ -289,7 +332,21 @@ void PhasingOptions(int argc, char** argv)
         die = true;
     }
     
-    
+    if (opt::callerStr == "clairs_to_ss") {
+        opt::caller = Caller::CLAIRS_TO_SS;
+    } else if (opt::callerStr == "clairs_to_ssrs") {
+        opt::caller = Caller::CLAIRS_TO_SSRS;
+    } else if (opt::callerStr == "deepsomatic_to") {
+        opt::caller = Caller::DEEPSOMATIC_TO;
+    } else {
+        std::cerr << SUBPROGRAM ": invalid caller option. Must be one of: clairs_to_ss, clairs_to_ssrs, deepsomatic_to\n";
+        die = true;
+    }
+
+    if(opt::disableCalling){
+        opt::somaticConnectAdjacent = 0;
+    }
+
     if (die)
     {
         std::cerr << "\n" << CORRECT_USAGE_MESSAGE;
@@ -317,6 +374,10 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     ecParams.isONT=opt::isONT;
     ecParams.isPB=opt::isPB;
     ecParams.phaseIndel=opt::phaseIndel;
+    ecParams.caller=opt::caller;
+    ecParams.callerStr=opt::callerStr;
+    ecParams.disablePonTag=opt::disablePonTag;
+    ecParams.disableCalling=opt::disableCalling;
     
     ecParams.connectAdjacent=opt::connectAdjacent;
     ecParams.mappingQuality=opt::mappingQuality;
@@ -331,9 +392,18 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     ecParams.snpConfidence=opt::snpConfidence;
     ecParams.readConfidence=opt::readConfidence;
     
+    ecParams.ponFile=opt::ponFile;
+    ecParams.strictPonFile=opt::strictPonFile;
+    
+    ecParams.somaticConnectAdjacent=opt::somaticConnectAdjacent;
+    
     ecParams.version=in_version;
     ecParams.command=opt::command;
     
+    ecParams.outputLOH = opt::outputLOH;
+    ecParams.outputSGE = opt::outputSGE;
+    ecParams.outputLGE = opt::outputLGE;
+    ecParams.outputGE = opt::outputGE;
 
     PhasingProcess processor(ecParams);
 

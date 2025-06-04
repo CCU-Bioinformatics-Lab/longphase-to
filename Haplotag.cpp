@@ -67,7 +67,7 @@ namespace opt
     static std::string outputFormat="bam";
     static bool tagSupplementary = false;
     static bool writeReadLog = false;
-    static std::string command="longphase ";
+    static std::string command="longphase-to ";
 }
 
 void HaplotagOptions(int argc, char** argv)

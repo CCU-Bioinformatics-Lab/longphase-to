@@ -12,13 +12,29 @@
 #include <htslib/vcfutils.h>
 
 #include <zlib.h>
+#include <random>
+
+enum CIGAR_OP {
+    MATCH = 0,     // alignment match (can be a sequence match or mismatch)
+    INSERTION = 1, // insertion to the reference
+    DELETION = 2,  // deletion from the reference
+    SKIP = 3,      // skipped region from the reference
+    SOFT_CLIP = 4, // soft clipping
+    HARD_CLIP = 5, // hard clipping
+    N = 6,         // skipped region of unknown type
+    EQ = 7,        // sequence match
+    X = 8,         // sequence mismatch
+};
 
 struct RefAlt{
     std::string Ref;
     std::string Alt;
+    float vaf;
     bool is_reverse;
     bool is_modify;
     bool is_danger;
+    bool homozygous;
+    VariantOriginType originType;
 };
 
 class FastaParser{
@@ -33,6 +49,7 @@ class FastaParser{
         
         // chrName, chr string
         std::map<std::string, std::string > chrString;
+        std::map<std::string, int > chrLength;
     
 };
 
@@ -65,6 +82,8 @@ class FormatSample {
 
     public:
         FormatSample(std::vector<std::string>& fields);
+        int getValueStart(const std::string& flag);
+        std::string getValue(const std::string& flag);
         void eraseFormatSample(const std::string& flag);
         void addFlagAndValue(const std::string& flagBase, const int value, const std::string& flagAdd = "");
         void setGTFlagAndValue(const std::string& flagBase, const std::string& value, const std::string& flagAdd = "");
@@ -87,13 +106,14 @@ class BaseVairantParser{
         FormatDefs formatDefs = {
             {"GT", "1", "String", "Genotype", false},
             {"PS", "1", "Integer", "Phase set identifier", false},
-            // {"SH", "1", "Integer", "Source haplotype", false},
-            // {"GT2", "1", "String", "Sub genotype", false},
-            // {"PS2", "1", "Integer", "Sub phase set identifier", false},
-            // {"SH2", "1", "Integer", "Sub source haplotype", false},
+            {"GT2", "1", "String", "Sub genotype", false},
+            {"PS2", "1", "Integer", "Sub phase set identifier", false},
+            {"GT3", "1", "String", "Sub genotype", false},
+            {"PS3", "1", "Integer", "Sub phase set identifier", false},
         };
         bool commandLine;
         PhasingParameters *params;
+        double purity;
 
     public:
         BaseVairantParser();
@@ -117,17 +137,33 @@ class SnpParser : public BaseVairantParser{
         std::vector<std::string> chrName;
         // chr, variant position (0-base)
         std::map<std::string, std::map<int, bool> > chrVariantHomopolymer;
-        
+
+        bool parserIndel;
+        bool parserAllele;
+        const size_t columnCount = 5;
+        bool useGermlineParser = false;
+
         // override input parser
         void parserProcess(std::string &input);
+        void parserProcessGermline(std::string &input);
+        void parserProcessOriginal(std::string &input);
+
         void fetchAndValidateTag(const int checkTag, const char *tag, hts_pos_t pos);
         VariantGenotype confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
-        void recordVariant(std::string &chr, bcf1_t *rec, std::map<std::string, std::map<int, RefAlt> > *chrVariant);
+        float getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos);
+        std::vector<std::string> splitString(const std::string &input);
+        void validateHeader(const std::vector<std::string>& fields);
+        std::array<std::string, 5> splitFieldsToArray(const char* ptr, size_t inputSize);
+        std::vector<std::string> splitFieldsToVector(const char* ptr, size_t inputSize);
+        int strToInt(const std::string &s);
 
     public:
 
         SnpParser(PhasingParameters &in_params);
+        SnpParser(const std::string &ponFile, const std::string &strictPonFile, bool phaseIndel);
         ~SnpParser();
+
+        void setGermline(const std::string &ponFile, const std::string &strictPonFile);
             
         std::map<int, RefAlt>* getVariants(std::string chrName);  
 
@@ -139,7 +175,7 @@ class SnpParser : public BaseVairantParser{
         
         int getLastSNP(std::string chrName);
         
-        void writeResult(ChrPhasingResult &chrPhasingResult);
+        void writeResult(ChrPhasingResult &chrPhasingResult, double purity);
 
         bool findSNP(std::string chr, int posistion);
         
@@ -233,15 +269,54 @@ class BamParser{
         // mod map and iter
         std::map<int, std::map<std::string ,RefAlt> > *currentMod;
         std::map<int, std::map<std::string ,RefAlt> >::iterator firstModIter;
-        void get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, const std::string &ref_string, bool isONT, double mismatchRate);
+        void get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, bool isONT, double mismatchRate);
+        void getClip(int pos, int clipFrontBack, int len, ClipCount &clipCount);
    
     public:
         BamParser(std::string chrName, std::vector<std::string> inputBamFileVec, SnpParser &snpMap, SVParser &svFile, METHParser &modFile, const std::string &ref_string);
         ~BamParser();
         
-        void direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool, PhasingParameters params, std::vector<ReadVariant> &readVariantVec , const std::string &ref_string);
+        void direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool, PhasingParameters params, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string);
 
 };
 
+
+class GenomicWriter {
+private:
+    const std::string resultPrefix;
+    const std::vector<std::string>& chrName;
+    const std::map<std::string, ChrInfo>& chrInfoMap;
+    
+    // Random number generation
+    std::mt19937 rng{std::random_device{}()};
+    std::uniform_int_distribution<> colorDist{0, 255};
+    
+    // Buffer for writing
+    static constexpr size_t BUFFER_SIZE = 8192;
+    std::string buffer;
+    
+    void openFile(std::ofstream& file, const std::string& filename);
+    void flushBuffer(std::ofstream& file);
+    void appendToBED(std::ofstream& file, const std::string& chr, int start, int end, 
+                    const std::string& name, double score, const std::string& strand);
+    std::string generateRandomColor();
+
+    void writeLOHSegments(std::ofstream &ofs);
+    void writeSmallGenomicEvent(std::ofstream &ofs);
+    void writeLargeGenomicEvent(std::ofstream &ofs);
+    void write(std::ofstream &ofs, std::function<void()> func);
+    
+public:
+    GenomicWriter(const std::string& resultPrefix, 
+                 const std::vector<std::string>& chrName,
+                 const std::map<std::string, ChrInfo>& chrInfoMap);
+    ~GenomicWriter();
+
+    void writeAllEvents();
+    void writeLGE();
+    void writeSGE();
+    void writeLOH();
+    void measureTime(const std::string& message, bool output, std::function<void()> func);
+};
 
 #endif

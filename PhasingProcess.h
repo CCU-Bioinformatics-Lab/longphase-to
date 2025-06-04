@@ -12,12 +12,22 @@ struct PhasingParameters
     std::string svFile;
     std::vector<std::string> bamFile;
     std::string modFile="";
+    std::string ponFile="";
+    std::string strictPonFile="";
     std::string fastaFile;
     std::string resultPrefix;
+    std::string callerStr;
+    Caller caller;
     bool generateDot;
     bool isONT;
     bool isPB;
     bool phaseIndel;
+    bool disablePonTag=true;
+    bool disableCalling=false;
+    bool outputLOH = false;  // Whether to output LOH results
+    bool outputSGE = false;  // Whether to output SmallGenomicEvent results
+    bool outputLGE = false;  // Whether to output LargeGenomicEvent results
+    bool outputGE = false;   // Whether to output GenomicEvent results
     
     int connectAdjacent;
     int mappingQuality;
@@ -31,6 +41,8 @@ struct PhasingParameters
     
     double edgeThreshold;
     double overlapThreshold;
+    
+    int somaticConnectAdjacent;
     
     std::string version;
     std::string command;

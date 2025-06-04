@@ -9,7 +9,7 @@ LIBS     =
 
 OBJ = Haplotag.o ParsingBam.o Util.o HaplotagProcess.o PhasingProcess.o Phasing.o PhasingGraph.o ModCall.o ModCallParsingBam.o ModCallProcess.o main.o
 
-PROGRAMS = longphase
+PROGRAMS = longphase-to
 
 all: subprojects
 

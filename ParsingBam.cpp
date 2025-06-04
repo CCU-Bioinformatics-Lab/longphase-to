@@ -17,15 +17,16 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
     last_pos(last_pos)
 {
     // init map
-    for(std::vector<std::string>::iterator iter = chrName.begin() ; iter != chrName.end() ; iter++)
+    for(std::vector<std::string>::iterator iter = chrName.begin() ; iter != chrName.end() ; iter++){
+        chrLength.insert(std::make_pair( (*iter) , 0));
         chrString.insert(std::make_pair( (*iter) , ""));
+    }
 
     // load reference index
     faidx_t *fai = NULL;
     fai = fai_load(fastaFile.c_str());
     
     // iterating all chr
-    #pragma omp parallfel for schedule(dynamic) num_threads(numThreads)
     for(std::vector<std::string>::iterator iter = chrName.begin() ; iter != chrName.end() ; iter++){
         
         int index = iter - chrName.begin();
@@ -40,14 +41,17 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
         int ref_len = 0;
 
         // read file
-        std::string chr_info(faidx_fetch_seq(fai , (*iter).c_str() , 0 , last_pos.at(index)+5 , &ref_len));
+        char *seq_ptr = faidx_fetch_seq(fai , (*iter).c_str() , 0 , last_pos.at(index)+5 , &ref_len);
         if(ref_len == 0){
             std::cout<<"nothing in reference file \n";
         }
+        chrLength[(*iter)] = ref_len;
 
         // update map
-        chrString[(*iter)] = chr_info;
+        chrString[(*iter)] = std::string(seq_ptr);
+        free(seq_ptr);
     }
+    fai_destroy(fai);
 }
 
 FastaParser::~FastaParser(){
@@ -112,6 +116,31 @@ void FormatSample::setGTValue(int modifyStart, const std::string &value) {
     fields[SAMPLE][modifyStart] = value[0];
     fields[SAMPLE][modifyStart+1] = value[1];
     fields[SAMPLE][modifyStart+2] = value[2];
+}
+
+int FormatSample::getValueStart(const std::string& flag){
+    auto flagStart = fields[FORMAT].find(flag);
+    if (flagStart != std::string::npos) {
+        int valueStart = findValueStart(flagStart);
+        return valueStart;
+    }
+    return -1;
+}
+
+std::string FormatSample::getValue(const std::string& flag){
+    auto flagStart = fields[FORMAT].find(flag);
+    if (flagStart != std::string::npos) {
+        int valueStart = findValueStart(flagStart);
+        auto endPos = fields[SAMPLE].find(":", valueStart + 1);
+        std::string value;
+        if (endPos != std::string::npos) {
+            value = fields[SAMPLE].substr(valueStart, endPos - valueStart);
+        } else {
+            value = fields[SAMPLE].substr(valueStart, fields[SAMPLE].length() - valueStart);
+        }
+        return value;
+    }
+    return "";
 }
 
 void FormatSample::eraseFormatSample(const std::string &flag) {
@@ -220,8 +249,7 @@ void BaseVairantParser::unCompressParser(std::string &variantFile){
     }
     else{
         std::string input;
-        while(! originVcf.eof() ){
-            std::getline(originVcf, input);
+        while(std::getline(originVcf, input)){
             parserProcess(input);
         }
     }
@@ -332,6 +360,7 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
             }
             resultVcf << "##longphaseVersion=" << params->version << "\n";
             resultVcf << "##commandline=\"" << params->command << "\"\n";
+            resultVcf << "##tumor_purity=" << purity << "\n";
             commandLine = true;
         }
         resultVcf << input << "\n";
@@ -359,7 +388,7 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
         // check exists in PhasingResult and the type is from the parser
         if(posPhasingResultIter != posPhasingResult.end() && checkType(posPhasingResultIter->second.type)){
             phasingResultPtr = &posPhasingResultIter->second;
-            phasedCount = phasingResultPtr->phaseSet.size();
+            phasedCount = phasingResultPtr->genotype.size();
             haplotypeIter = phasingResultPtr->genotype.begin();
         }
 
@@ -411,6 +440,7 @@ SnpParser::SnpParser(PhasingParameters &in_params){
     chrVariant = new std::map<std::string, std::map<int, RefAlt> >;
     
     params = &in_params;
+    parserIndel = params->phaseIndel;
     // open vcf file
     htsFile * inf = bcf_open(params->snpFile.c_str(), "r");
     // read header
@@ -434,24 +464,120 @@ SnpParser::SnpParser(PhasingParameters &in_params){
         std::cout << "error or a positive integer if the list contains samples not present in the VCF header\n";
     }
 
+    // deepvariant use VAF
+    // clair3 use AF
+    const char* vafTagName = "AF";
+    int tag_id = bcf_hdr_id2int(hdr, BCF_DT_ID, vafTagName);
+    if (!bcf_hdr_idinfo_exists(hdr, BCF_HL_FMT, tag_id)) {
+        vafTagName = "VAF";
+    }
+
     // struct for storing each record
     bcf1_t *rec = bcf_init();
 
     while (bcf_read(inf, hdr, rec) == 0) {
         // snp or indel
-        if (bcf_is_snp(rec) || params->phaseIndel) {
-            VariantGenotype parserType = confirmRequiredGT(hdr, rec, "GT", rec->pos);
+        bool is_snp = bcf_is_snp(rec);
+        if (is_snp || parserIndel) {
+            if (rec->n_allele > 2) {
+                continue;
+            }
+
+            bcf_unpack(rec, BCF_UN_FLT);
+            int n_filters = rec->d.n_flt;
+            int *filters = rec->d.flt;
+            VariantOriginType originType = ORIGIN_UNDEFINED;
+            for (int i = 0; i < n_filters; ++i) {
+                const char* filter_str = bcf_hdr_int2id(hdr, BCF_DT_ID, filters[i]);
+                if (strcmp(filter_str, "PASS") == 0) {
+                    originType = SOMATIC;
+                    break;
+                } else if (strcmp(filter_str, "PON") == 0 || strcmp(filter_str, "NonSomatic") == 0) {
+                    originType = (!params->disablePonTag) ? PON : GERMLINE;
+                    break;
+                } else if (strcmp(filter_str, "GERMLINE") == 0) {
+                    originType = PON;
+                    break;
+                }
+            }
+            if (originType == ORIGIN_UNDEFINED && params->caller != DEEPSOMATIC_TO){
+                originType = GERMLINE;
+            }
+            if (originType == ORIGIN_UNDEFINED) {
+                continue;
+            }
+            VariantGenotype parserType = GENOTYPE_UNDEFINED;
+            int variantPos = rec->pos;
+            float vaf = getVAF(hdr, rec, vafTagName, variantPos);
+            if (params->caller == DEEPSOMATIC_TO) {
+                parserType = vaf <= 0.95 ? HET : HOM;
+            } else {
+                parserType = confirmRequiredGT(hdr, rec, "GT", variantPos);
+            }
             if ( parserType != GENOTYPE_UNDEFINED ) {
+                RefAlt tmp;
+                tmp.Ref = rec->d.allele[0];
+                tmp.Alt = rec->d.allele[1];
+                tmp.homozygous = parserType;
+                tmp.vaf = vaf;
+                tmp.originType = originType;
                 // get chromosome string
-                std::string chr = seqnames[rec->rid];
-                recordVariant(chr, rec, chrVariant);
+                const char* chr = seqnames[rec->rid];
+                // record
+                (*chrVariant)[chr][variantPos] = tmp;
             }
         }
+    }
+    bcf_destroy(rec);
+    bcf_hdr_destroy(hdr);
+    bcf_close(inf);
+    free(seqnames);
+}
+
+SnpParser::SnpParser(const std::string &ponFile, const std::string &strictPonFile, bool parserIndel) 
+    : chrVariant(new std::map<std::string, std::map<int, RefAlt>>()), parserIndel(parserIndel) {
+    auto ponFiles = splitString(ponFile);
+    auto strictPonFiles = splitString(strictPonFile);
+    auto processFile = [this](std::string &file) {
+        if (file.find(".gz") != std::string::npos) {
+            this->compressParser(file);
+        } else if (file.find(".vcf") != std::string::npos) {
+            this->unCompressParser(file);
+        }
+    };
+    parserAllele = false;
+    for (auto &file : ponFiles) {
+        processFile(file);
+    }
+    parserAllele = true;
+    for (auto &file : strictPonFiles) {
+        processFile(file);
     }
 }
 
 SnpParser::~SnpParser(){
     delete chrVariant;
+}
+
+void SnpParser::setGermline(const std::string &ponFile, const std::string &strictPonFile){
+    useGermlineParser = true;
+    auto ponFiles = splitString(ponFile);
+    auto strictPonFiles = splitString(strictPonFile);
+    auto processFile = [this](std::string &file) {
+        if (file.find(".gz") != std::string::npos) {
+            this->compressParser(file);
+        } else if (file.find(".vcf") != std::string::npos) {
+            this->unCompressParser(file);
+        }
+    };
+    parserAllele = false;
+    for (auto &file : ponFiles) {
+        processFile(file);
+    }
+    parserAllele = true;
+    for (auto &file : strictPonFiles) {
+        processFile(file);
+    }
 }
 
 std::map<int, RefAlt>* SnpParser::getVariants(std::string chrName){
@@ -523,7 +649,8 @@ int SnpParser::getLastSNP(std::string chrName){
     return (*lastVariantIter).first;
 }
 
-void SnpParser::writeResult(ChrPhasingResult &chrPhasingResult){
+void SnpParser::writeResult(ChrPhasingResult &chrPhasingResult, double purity){
+    this->purity = purity;
 
     if( params->snpFile.find("gz") != std::string::npos ){
         // .vcf.gz 
@@ -537,6 +664,131 @@ void SnpParser::writeResult(ChrPhasingResult &chrPhasingResult){
 }
 
 void SnpParser::parserProcess(std::string &input){
+    if (useGermlineParser) {
+        parserProcessGermline(input);
+    } else {
+        parserProcessOriginal(input);
+    }
+}
+
+void SnpParser::parserProcessGermline(std::string &input){
+    const char* ptr = input.c_str();
+    size_t inputSize = input.size();
+
+    // skip lines that are a header, identified by the '##' prefix
+    if (inputSize >= 2 && ptr[0] == '#' && ptr[1] == '#') {
+        return;
+    }
+    // skip header line containing column names: #CHROM POS ID REF ALT
+    if (inputSize >= 1 && ptr[0] == '#') {
+        std::istringstream iss(input);
+        std::vector<std::string> fields((std::istream_iterator<std::string>(iss)),std::istream_iterator<std::string>());
+        validateHeader(fields);
+        return;
+    }
+
+    // declare an array to store fields and split the input line into fields
+    // `std::array` is faster for fixed-size data, while `std::vector` is more flexible for dynamic data.
+    std::array<std::string, 5> fields = splitFieldsToArray(ptr, inputSize);
+    // std::vector<std::string> fields = splitFieldsToVector(ptr, inputSize);
+    std::string chr = fields[CHROM];
+    // vcf 1-based(htslib parser 0-based), bam 0-based, so we need to minus 1
+    int pos = strToInt(fields[POS]) - 1;
+
+    auto& chrIter = (*chrVariant)[chr];
+    auto posIter = chrIter.find(pos);
+    // if the position does not exist or the variant is already marked as pon, skip
+    if (posIter == chrIter.end() || posIter->second.originType == PON) {
+        return;
+    }
+    RefAlt* variant = &posIter->second;
+    // if allele comparison is ignored
+    if (!parserAllele) {
+        variant->originType = PON;
+        return;
+    }
+    // chrVariant will not store variants with multiple alleles, 
+    // so there is no handling for multiple alleles here.
+    auto germlineAlts = splitString(fields[ALT]);
+    // if multiple ALT alleles are present, check if any pon allele match the variant allele
+    for (const auto & germlineAlt : germlineAlts) {
+        if (variant->Alt == germlineAlt) {
+            variant->originType = PON;
+            return;
+        }
+    }
+}
+
+void SnpParser::parserProcessOriginal(std::string &input){
+    const char* ptr = input.c_str();
+    size_t inputSize = input.size();
+
+    // skip lines that are a header, identified by the '##' prefix
+    if (inputSize >= 2 && ptr[0] == '#' && ptr[1] == '#') {
+        return;
+    }
+    // skip header line containing column names: #CHROM POS ID REF ALT
+    if (inputSize >= 1 && ptr[0] == '#') {
+        std::istringstream iss(input);
+        std::vector<std::string> fields((std::istream_iterator<std::string>(iss)),std::istream_iterator<std::string>());
+        validateHeader(fields);
+        return;
+    }
+
+    // declare an array to store fields and split the input line into fields
+    // `std::array` is faster for fixed-size data, while `std::vector` is more flexible for dynamic data.
+    std::array<std::string, 5> fields = splitFieldsToArray(ptr, inputSize);
+    // std::vector<std::string> fields = splitFieldsToVector(ptr, inputSize);
+    RefAlt variant;
+
+    if (!parserIndel) {
+        size_t refLength = fields[REF].length();
+        auto germlineAlts = splitString(fields[ALT]);
+        for (const auto &germlineAlt : germlineAlts) {
+            if (germlineAlt.length() == refLength) {
+                if (!variant.Alt.empty()) {
+                    variant.Alt.push_back(',');
+                }
+                variant.Alt.append(germlineAlt);
+            }
+        }
+        if (variant.Alt.empty()) {
+            return;
+        }
+    }
+    else {
+        variant.Alt = fields[ALT];
+    }
+    // if allele comparison is ignored
+    if (!parserAllele) {
+        variant.Alt = ".";
+    }
+
+    std::string chr = fields[CHROM];
+    // vcf 1-based(htslib parser 0-based), bam 0-based, so we need to minus 1
+    int pos = strToInt(fields[POS]) - 1;
+    variant.Ref = fields[REF];
+
+    auto& chrIter = (*chrVariant)[chr];
+    auto posIter = chrIter.find(pos);
+    if (posIter == chrIter.end()) {
+        chrIter.insert({pos, variant});
+    } else {
+        if(posIter->second.Alt == variant.Alt || posIter->second.Alt == "."){
+            return;
+        }
+        if (variant.Alt == ".") {
+            posIter->second.Alt = ".";
+            return;
+        }
+        auto existingAlts = splitString(posIter->second.Alt);
+        auto newAlts = splitString(variant.Alt);
+        for (const auto &alt : newAlts) {
+            if (std::find(existingAlts.begin(), existingAlts.end(), alt) == existingAlts.end()) {
+                posIter->second.Alt += "," + alt;
+            }
+        }
+    }
 }
 
 void SnpParser::fetchAndValidateTag(const int checkTag, const char *tag, hts_pos_t pos){
@@ -547,44 +799,120 @@ void SnpParser::fetchAndValidateTag(const int checkTag, const char *tag, hts_pos
 }
 
 VariantGenotype SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos){
-    
+    VariantGenotype result = GENOTYPE_UNDEFINED;
     int ngt_arr = 0;
     int *gt = NULL;
     int checkTag = bcf_get_format_int32(hdr, line, tag, &gt, &ngt_arr);
     fetchAndValidateTag(checkTag, tag, pos);
     
-    // hetero SNP
+    // heterozygous SNP
     if ((gt[0] == 2 && gt[1] == 4) || (gt[0] == 4 && gt[1] == 2) || // 0/1, 1/0
         (gt[0] == 2 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 3) || // 0|1, 1|0
         (gt[0] == 0 && gt[1] == 3) || (gt[0] == 2 && gt[1] == 1)) { // .|0, 0|.
-        return HET;
+        result = HET;
     }
-    // // homo SNP
-    // else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
-    //          (gt[0] == 4 && gt[1] == 5) || // 1|1
-    //          (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1)) { // .|1, 1|.
-    //     return HOM;
-    // }
-    else {
-        return GENOTYPE_UNDEFINED;
+    // homozygous SNP
+    else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
+             (gt[0] == 4 && gt[1] == 5) || // 1|1
+             (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1)) { // .|1, 1|.
+        result = HOM;
+    }
+    free(gt);
+    return result;
+}
+
+float SnpParser::getVAF(const bcf_hdr_t *hdr, bcf1_t *line, const char *tag, hts_pos_t pos){
+    
+    int nvaf_arr = 0;
+    float *vaf_ptr = nullptr;
+    int checkTag = bcf_get_format_float(hdr, line, tag, &vaf_ptr, &nvaf_arr);
+    fetchAndValidateTag(checkTag, tag, pos);
+    float vaf = vaf_ptr[0];
+    free(vaf_ptr);
+    return vaf;
+}
+
+std::vector<std::string> SnpParser::splitString(const std::string &input) {
+    std::vector<std::string> result;
+    const char* str = input.data();
+    const char* end = str + input.size();
+    if (std::find(str, end, ',') == end) {
+        result.push_back(std::string(str, end - str));
+        return result;
+    }
+
+    while (str < end) {
+        const char* comma = std::find(str, end, ',');
+        size_t len = comma - str;
+        result.push_back(std::string(str, len));
+        if (comma == end) {
+            break;
+        }
+        str = comma + 1;
+    }
+    return result;
+}
+
+void SnpParser::validateHeader(const std::vector<std::string>& fields) {
+    if (fields.size() < columnCount) {
+        std::cerr << "header columns mismatch: #CHROM\tPOS\tID\tREF\tALT" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    std::string formatColumnsCheck;
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (fields[i] == "CHROM" && CHROM != i) formatColumnsCheck += fields[i] + " ";
+        else if (fields[i] == "POS" && POS != i) formatColumnsCheck += fields[i] + " ";
+        else if (fields[i] == "REF" && REF != i) formatColumnsCheck += fields[i] + " ";
+        else if (fields[i] == "ALT" && ALT != i) formatColumnsCheck += fields[i] + " ";
+    }
+    if (!formatColumnsCheck.empty()){
+        std::cerr << "vcf format columns mismatch: " << formatColumnsCheck << std::endl;
+        exit(EXIT_FAILURE);
     }
 }
 
-void SnpParser::recordVariant(std::string &chr, bcf1_t *rec, std::map<std::string, std::map<int, RefAlt> > *chrVariant) {
-    // position is 0-base
-    int variantPos = rec->pos;
-    // get r alleles
-    RefAlt tmp;
-    tmp.Ref = rec->d.allele[0];
-    tmp.Alt = rec->d.allele[1];
-    
-    //prevent the MAVs calling error which makes the GT=0/1
-    if ( rec->d.allele[1][tmp.Alt.size()+1] != '\0' ){
-        return;
+std::array<std::string, 5> SnpParser::splitFieldsToArray(const char* ptr, size_t inputSize) {
+    std::array<std::string, 5> fields;
+    size_t index = 0;
+    const char* start = ptr;
+    const char* end = ptr + inputSize;
+    while (start < end && index < columnCount) {
+        const char* tab = std::find(start, end, '\t');
+        if (tab == end) {
+            fields[index++] = std::string(start, end - start);
+            break;
+        } else {
+            fields[index++] = std::string(start, tab - start);
+            start = tab + 1;
+        }
     }
-    
-    // record 
-    (*chrVariant)[chr][variantPos] = tmp;
+    return fields;
+}
+
+std::vector<std::string> SnpParser::splitFieldsToVector(const char* ptr, size_t inputSize) {
+    std::vector<std::string> fields;
+    size_t index = 0;
+    const char* start = ptr;
+    const char* end = ptr + inputSize;
+    while (start < end && index < columnCount) {
+        const char* tab = std::find(start, end, '\t');
+        if (tab == end) {
+            fields.push_back(std::string(start, end - start));
+            break;
+        } else {
+            fields.push_back(std::string(start, tab - start));
+            start = tab + 1;
+        }
+    }
+    return fields;
+}
+
+int SnpParser::strToInt(const std::string &s) {
+    int result = 0;
+    for (const char c : s) {
+        result = result * 10 + (c - '0');
+    }
+    return result;
 }
 
 bool SnpParser::findSNP(std::string chr, int position){
@@ -593,10 +921,17 @@ bool SnpParser::findSNP(std::string chr, int position){
     if( chrIter == chrVariant->end() )
         return false;
     
-    std::map<int, RefAlt>::iterator posIter = (*chrVariant)[chr].find(position);
+    std::map<int, RefAlt>::iterator posIter = chrIter->second.find(position);
     // empty position
-    if( posIter == (*chrVariant)[chr].end() )
+    if( posIter == chrIter->second.end() )
         return false;
+
+    // If the variant is homozygous (homozygous is true), remove the SNP at this position from chrVariant 
+    // and prioritize other variants.
+    if (posIter->second.homozygous == true){
+        (*chrVariant)[chr].erase(posIter);
+        return false;
+    }
         
     return true;
 }
@@ -640,9 +975,18 @@ void SnpParser::filterSNP(std::string chr, std::vector<ReadVariant> &readVariant
             consecutiveAllele[(*posIter).first] = homopolymerLength((*posIter).first, chr_reference);
         }
         std::map<int, RefAlt>::iterator currSNPIter = (*chrIter).second.begin();
+        //skip homozygous SNP
+        while( currSNPIter != (*chrIter).second.end() && currSNPIter->second.homozygous == true ){
+            currSNPIter++;
+        }
         std::map<int, RefAlt>::iterator nextSNPIter = std::next(currSNPIter,1);
         // check whether each SNP pair falls in an area that is not easy to phasing
         while( currSNPIter != (*chrIter).second.end() && nextSNPIter != (*chrIter).second.end() ){
+            //skip homozygous SNP
+            if (nextSNPIter->second.homozygous == true){
+                nextSNPIter++;
+                continue;
+            }
             int currPos = (*currSNPIter).first;
             int nextPos = (*nextSNPIter).first;
             // filter one of SNP if this SNP pair falls in homopolymer and distance<=2
@@ -652,7 +996,7 @@ void SnpParser::filterSNP(std::string chr, std::vector<ReadVariant> &readVariant
                 continue;
             }
             
-            currSNPIter++;
+            currSNPIter = nextSNPIter;
             nextSNPIter++;
         }
         
@@ -820,9 +1164,9 @@ bool SVParser::findSV(std::string chr, int position){
     if( chrIter == chrVariant->end() )
         return false;
     
-    std::map<int, std::map<std::string ,bool>>::iterator posIter = (*chrVariant)[chr].find(position);
+    std::map<int, std::map<std::string ,bool>>::iterator posIter = chrIter->second.find(position);
     // empty position
-    if( posIter == (*chrVariant)[chr].end() )
+    if( posIter == chrIter->second.end() )
         return false;
         
     return true;
@@ -830,7 +1174,7 @@ bool SVParser::findSV(std::string chr, int position){
 
 BamParser::BamParser(std::string inputChrName, std::vector<std::string> inputBamFileVec, SnpParser &snpMap, SVParser &svFile, METHParser &modFile, const std::string &ref_string):chrName(inputChrName),BamFileVec(inputBamFileVec){
     
-    currentVariants = new std::map<int, RefAlt>;
+    // currentVariants = new std::map<int, RefAlt>;
     currentSV = new std::map<int, std::map<std::string ,bool> >;
     currentMod = new std::map<int, std::map<std::string ,RefAlt> >;
     
@@ -854,11 +1198,12 @@ BamParser::BamParser(std::string inputChrName, std::vector<std::string> inputBam
 
 BamParser::~BamParser(){
     // delete currentVariants;
+    currentVariants = nullptr;
     delete currentSV;
     delete currentMod;
 }
 
-void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool, PhasingParameters params, std::vector<ReadVariant> &readVariantVec, const std::string &ref_string){
+void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool, PhasingParameters params, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string){
     
     // record SNP start iter
     std::map<int, RefAlt>::iterator tmpFirstVariantIter = firstVariantIter;
@@ -908,17 +1253,104 @@ void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool,
                 continue;
             }
 
-            get_snp(*bamHdr,*aln,readVariantVec, ref_string, params.isONT, params.mismatchRate);
+            get_snp(*bamHdr,*aln,readVariantVec, clipCount, ref_string, params.isONT, params.mismatchRate);
         }
         hts_idx_destroy(idx);
         bam_hdr_destroy(bamHdr);
         bam_destroy1(aln);
+        hts_itr_destroy(iter);
         sam_close(fp_in);
     }
     
 }
 
-void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, const std::string &ref_string, bool isONT, double mismatchRate){
+
+bool processCigarOperation(const uint32_t *cigar, int &cigarIndex, int cigarIndexEnd, int direction, int &remainingBases, int &readPos, int &refPos, int &cigarOp){
+    cigarIndex += direction;
+
+    while (cigarIndex < cigarIndexEnd && cigarIndex >= 0){
+        cigarOp = bam_cigar_op(cigar[cigarIndex]);
+        int cigarOpLen = bam_cigar_oplen(cigar[cigarIndex]);
+
+        if (cigarOp == MATCH || cigarOp == SKIP || cigarOp == N || cigarOp == EQ || cigarOp == X){
+            remainingBases += cigarOpLen;
+            return true;
+        }
+        else if (cigarOp == INSERTION){
+            readPos += cigarOpLen * direction;
+        }
+        else if (cigarOp == DELETION){
+            refPos += cigarOpLen * direction;
+        }
+        else if (cigarOp == SOFT_CLIP || cigarOp == HARD_CLIP){
+            return false;
+        }
+        else {
+            return false;
+        }
+        cigarIndex += direction;
+    }
+    return false;
+}
+
+std::vector<std::pair<int, char>> getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int remainingBases, int refPos, int direction, int windowSize = 100){
+    const int cigarIndexEnd = aln.core.n_cigar;
+    const int readLen = aln.core.l_qseq;
+    const int refLen = refString.length();
+    int cigarOp = bam_cigar_op(cigar[cigarIndex]);
+    const uint8_t *seq = bam_get_seq(&aln);
+    std::vector<std::pair<int, char>> offsetBase;
+
+    
+    for (int i = 1; i <= windowSize; i++){
+        remainingBases-- ;
+        // next cigar
+        if (remainingBases == 0 || remainingBases == -1){
+            if(!processCigarOperation(cigar, cigarIndex, cigarIndexEnd, direction, remainingBases, readPos, refPos, cigarOp)){
+                return offsetBase;
+            }
+        }
+        if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N){
+            continue;
+        }
+        readPos += direction;
+        refPos += direction;
+        if (readPos > readLen || refPos > refLen || readPos < 0 || refPos < 0) {
+            return offsetBase;
+        }
+        char read_base = seq_nt16_str[bam_seqi(seq, readPos)];
+        char ref_base = refString[refPos];
+        if (read_base != ref_base){
+            offsetBase.push_back(std::make_pair(i * direction, read_base));
+        }
+    }
+    return offsetBase;
+}
+
+std::vector<std::pair<int, char>> getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int readOffset, int refPos, int windowSize = 100){
+    const int cigarOpLen = bam_cigar_oplen(cigar[cigarIndex]);
+    const int cigarOp = bam_cigar_op(cigar[cigarIndex]);
+    int ForwardRemainingBases = 0;
+    int ReversRemainingBases = 0;
+    readPos += readOffset;
+    if(cigarOp != INSERTION){
+        ForwardRemainingBases = cigarOpLen - readOffset > 0 ? cigarOpLen - readOffset : 0;
+        ReversRemainingBases = readOffset > 0 ? readOffset : 0;
+    }
+
+    std::vector<std::pair<int, char>> offsetBase;
+
+    auto appendBases = [&](int direction, int buffer) {
+        auto bases = getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, buffer, refPos, direction, windowSize);
+        offsetBase.insert(offsetBase.end(), bases.begin(), bases.end());
+    };
+
+    appendBases(-1, ReversRemainingBases);
+    appendBases(1, ForwardRemainingBases);
+    return offsetBase;
+}
+
+void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, bool isONT, double mismatchRate){
 
     ReadVariant *tmpReadResult = new ReadVariant();
     (*tmpReadResult).read_name = bam_get_qname(&aln);
@@ -1108,7 +1540,9 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
             
                     if( allele != -1 ){
                         // record snp result
-                        Variant *tmpVariant = new Variant(variantPos, allele, base_q);
+                        Variant *tmpVariant = new Variant(variantPos, allele, base_q, currentVariantIter->second.homozygous);
+                        std::vector<std::pair<int, char>> offsetBase = getWindowsDiffRef(cigar, i, aln, ref_string, query_pos, offset, variantPos);
+                        (*tmpVariant).offsetBase = offsetBase;
                         (*tmpReadResult).variantVec.push_back( (*tmpVariant) );
                         delete tmpVariant;                        
                     }
@@ -1117,6 +1551,13 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
                 }
                 else break;
             }
+        }
+        // Exclude the case where, in a homopolymer deletion, a hom variant position 
+        // that is less than the het variant position prevents the het variant from being pushed.
+        while( currentVariantIter != currentVariants->end() && 
+               (*currentVariantIter).second.homozygous == true && 
+               (*currentVariantIter).first < ref_pos + cigar_oplen) {
+            currentVariantIter++;
         }
         
         // Preparing to process the next CIGAR operator.
@@ -1218,11 +1659,13 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
             query_pos += cigar_oplen;
             cigar_clip_oplen += cigar_oplen;
             cigar_total_oplen += cigar_oplen;
+            getClip(ref_pos, i, cigar_oplen, clipCount);
         }
         // 5: hard clipping (clipped sequences NOT present in SEQ)
         else if( cigar_op == 5 ){
             cigar_clip_oplen += cigar_oplen;
             cigar_total_oplen += cigar_oplen;
+            getClip(ref_pos, i, cigar_oplen, clipCount);
         }
         // 6: padding (silent deletion from padded reference)
         else if(cigar_op == 6 ){
@@ -1252,6 +1695,21 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<R
     //std::cout<< "readname: " << bam_get_qname(&aln) << "\tnm_value: " << nm_value << "\tcigar_total_oplen: " << cigar_total_oplen << "\tcigar_clip_oplen: " << cigar_clip_oplen << "\tcigar_indel_oplen: " << cigar_indel_oplen << "\tmm_rate: " << mm_rate << "\n";
     //std::cout << bamHdr.target_name[aln.core.tid] << "\treadname: " << bam_get_qname(&aln) << "\t" << mmrate << "\n";
     delete tmpReadResult;
+}
+
+void BamParser::getClip(int pos, int clipFrontBack, int len, ClipCount &clipCount){
+    if (len > 5){
+        // Initialize clipCount[pos] if it doesn't exist
+        if (clipCount.find(pos) == clipCount.end()) {
+            clipCount[pos] = {0, 0};
+        }
+        if (clipFrontBack == FRONT){
+            clipCount[pos][FRONT]++;
+        }
+        else {
+            clipCount[pos][BACK]++;
+        }
+    }
 }
 
 METHParser::METHParser(PhasingParameters &in_params, SnpParser &in_snpFile, SVParser &in_svFile){
@@ -1405,3 +1863,144 @@ std::map<int, std::map<std::string ,RefAlt> > METHParser::getVariants(std::strin
     return targetVariants;
 }
 
+GenomicWriter::GenomicWriter(const std::string& resultPrefix, 
+                           const std::vector<std::string>& chrName,
+                           const std::map<std::string, ChrInfo>& chrInfoMap)
+    : resultPrefix(resultPrefix)
+    , chrName(chrName)
+    , chrInfoMap(chrInfoMap)
+    , buffer()
+{
+    buffer.reserve(BUFFER_SIZE);
+}
+
+GenomicWriter::~GenomicWriter() {
+}
+
+void GenomicWriter::openFile(std::ofstream& file, const std::string& filename) {
+    file.open(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file: " + filename);
+    }
+}
+
+void GenomicWriter::flushBuffer(std::ofstream& file) {
+    if (!buffer.empty()) {
+        file << buffer;
+        buffer.clear();
+        buffer.reserve(BUFFER_SIZE);
+    }
+}
+
+std::string GenomicWriter::generateRandomColor() {
+    return std::to_string(colorDist(rng)) + "," + 
+           std::to_string(colorDist(rng)) + "," + 
+           std::to_string(colorDist(rng));
+}
+
+void GenomicWriter::appendToBED(std::ofstream& file, const std::string& chr, 
+                               int start, int end, const std::string& name,
+                               double score, const std::string& strand) {
+    std::string color = generateRandomColor();
+    
+    buffer.append(chr)
+          .append("\t")
+          .append(std::to_string(start))
+          .append("\t")
+          .append(std::to_string(end))
+          .append("\t")
+          .append(name)
+          .append("\t")
+          .append(std::to_string(score))
+          .append("\t")
+          .append(strand)
+          .append("\t")
+          .append(std::to_string(start))
+          .append("\t")
+          .append(std::to_string(end))
+          .append("\t")
+          .append(color)
+          .append("\n");
+          
+    if (buffer.size() >= BUFFER_SIZE) {
+        flushBuffer(file);
+    }
+}
+
+void GenomicWriter::measureTime(const std::string& message, bool output, std::function<void()> func) {
+    if (!output) return;
+
+    std::time_t start = time(NULL);
+    std::cerr << "Writing " << message << " results... ";
+    func();
+    std::cerr << difftime(time(NULL), start) << "s\n";
+}
+
+void GenomicWriter::writeLOHSegments(std::ofstream &ofs) {
+    for(const auto& chr : chrName) {
+        for(const auto& segment : chrInfoMap.at(chr).LOHSegments) {
+            appendToBED(ofs, chr, segment.start, segment.end, "LOH", segment.ratio, ".");
+        }
+    }
+}
+
+void GenomicWriter::writeSmallGenomicEvent(std::ofstream &ofs) {
+    for(const auto& chr : chrName) {
+        for(const auto& segment : chrInfoMap.at(chr).smallGenomicEventRegion) {
+            appendToBED(ofs, chr, segment.first, segment.second, "SGE", 0, ".");
+        }
+    }
+}
+
+void GenomicWriter::writeLargeGenomicEvent(std::ofstream &ofs) {
+    for(const auto& chr : chrName) {
+        const auto& intervals = chrInfoMap.at(chr).largeGenomicEventInterval;
+        if(intervals.empty()) continue;
+        
+        auto it = intervals.begin();
+        auto end = intervals.end();
+        // Handle first interval
+        // appendToBED(ofs, chr, *it - 1, *it, "LGE", 0, ".");
+        // Handle remaining intervals
+        auto prev = it++;
+        for(; it != end; ++it, ++prev) {
+            appendToBED(ofs, chr, *prev, *it, "LGE", 0, ".");
+        }
+    }
+}
+
+void GenomicWriter::write(std::ofstream &ofs, std::function<void()> func) {
+    try {
+        func();
+        flushBuffer(ofs);
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
+}
+
+void GenomicWriter::writeLOH() {
+    std::ofstream ofs;
+    openFile(ofs, resultPrefix + "_LOH.bed");
+    write(ofs, [this, &ofs]() { writeLOHSegments(ofs); });
+}
+void GenomicWriter::writeSGE() {
+    std::ofstream ofs;
+    openFile(ofs, resultPrefix + "_SGE.bed");
+    write(ofs, [this, &ofs]() { writeSmallGenomicEvent(ofs); });
+}
+
+void GenomicWriter::writeLGE() {
+    std::ofstream ofs;
+    openFile(ofs, resultPrefix + "_LGE.bed");
+    write(ofs, [this, &ofs]() { writeLargeGenomicEvent(ofs); });
+    ofs.close();
+}
+
+void GenomicWriter::writeAllEvents() {
+    std::ofstream ofs;
+    openFile(ofs, resultPrefix + "_GE.bed");
+    write(ofs, [this, &ofs]() { writeLargeGenomicEvent(ofs); });
+    write(ofs, [this, &ofs]() { writeSmallGenomicEvent(ofs); });
+    write(ofs, [this, &ofs]() { writeLOHSegments(ofs); });
+    ofs.close();
+}
