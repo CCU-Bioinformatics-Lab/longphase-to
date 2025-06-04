@@ -2,12 +2,19 @@
 **LongPhase-TO** is a tumor-only variant phasing and analysis pipeline, extending [**LongPhase**](https://github.com/twolinin/longphase) for long-read sequencing data.  
 It supports:
 - **LOH (Loss of Heterozygosity) Detection**
+  ![LOH_Result](https://github.com/user-attachments/assets/a01dd79b-12c7-4cc9-98be-2ba14937078e)
 - **Somatic Variant Calling**
+  ![snv_metrics_ssrs](https://github.com/user-attachments/assets/3a0e19dc-10ca-4f2a-9a63-4bfc05c60c72)
 - **Joint Phasing of Germline and Somatic Variants**
+  ![phasing](https://github.com/user-attachments/assets/918ea204-e55b-468f-ba39-5f851672343b)
 - **Tumor Purity Estimation**
+  ![purity_estimation](https://github.com/user-attachments/assets/f3454200-e088-4eed-9d15-193bb49a2c6e)
 - **Haplotagging**
+  ![haplotag](https://github.com/user-attachments/assets/8a015d74-fcd0-40ab-8507-26e7eace6bbf)
+
 
 LongPhase-TO Overview:
+![LongPhase_TO_Overview](https://github.com/user-attachments/assets/31bf83b8-077e-4aa9-aff6-7d9fab701ef1)
 
 ---
 [LongPhase-TO](#longphase-to)
