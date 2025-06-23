@@ -5,8 +5,8 @@
 #include "ModCall.h"
 
 
-#define PROGRAM_BIN "main"
-#define VERSION "1.7.3"
+#define PROGRAM_BIN "longphase-to"
+#define VERSION "1.0.0"
 
 
 
@@ -17,8 +17,6 @@ static const char *STRIDE_USAGE_MESSAGE =
 "Usage: " PROGRAM_BIN " <command> [options]\n"  
 "               phase      run phasing algorithm.\n"
 "               haplotag   tag reads by haplotype.\n"
-"               modcall    convert bam file to modification vcf file.\n"
-
 "\n";
 
 int main(int argc, char** argv)

@@ -1175,7 +1175,6 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
         while(lohIter != LOHSegments.end() && variantIter->first > lohIter->end){
             lohIter++;
             connectedHP = HAPLOTYPE_UNDEFINED;
-            nextConnectedAllele = Allele_UNDEFINED;
             assignPhaseSet = -1;
         }
         bool backLOHRegion = inLOHRegion;
@@ -1240,6 +1239,7 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
                         genomicEventChange = false;
                         if(nextConnectedAllele != Allele_UNDEFINED){
                             assignPhaseSet = result.phaseSet.front();
+                            nextConnectedAllele = Allele_UNDEFINED;
                         }
                     }
                     if(result.somatic){

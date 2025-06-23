@@ -34,7 +34,7 @@ out/
 .DS_Store
 Thumbs.db
  
-longphase 
+longphase-to
 htslib/*
 jemalloc/*
 configure
