@@ -820,7 +820,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
                         variant3Iter++;
                     }
                 }
-                if(addHomCount <= 6){
+                if((addHomCount <= 6 && variant1Iter->homozygous!= variant2Iter->homozygous) || (variant1Iter->homozygous == false && variant2Iter->homozygous == false)){
                     // this allele support ref
                     if( variant1Iter->allele == 0 )
                         node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
