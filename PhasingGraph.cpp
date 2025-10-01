@@ -264,7 +264,7 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, Varia
     return std::make_pair( refEdge, altEdge );
 }
 
-int VairiantGraph::patternMining(ThreePointEdge threePointEdge){
+SomaticVote VairiantGraph::patternMining(ThreePointEdge threePointEdge){
     constexpr float condition = 2;
     SomaticVote vote = VOTE_UNDEFINED;
 
@@ -908,7 +908,7 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
                         j++;
 
                         ThreePointEdge threePointEdge = edge->findThreePointEdge(nextNodeIter->first,nextNextNodeIter->first);
-                        int voteTmp = patternMining(threePointEdge);
+                        SomaticVote voteTmp = patternMining(threePointEdge);
                         
                         if (voteTmp == LEFT_HIGH_SA_PAR || voteTmp == LEFT_HIGH_SR_PAR || voteTmp == LEFT_HIGH_SA_CR || voteTmp == LEFT_HIGH_SR_CR || 
                             voteTmp == LEFT_LOW_SA_PAR){
