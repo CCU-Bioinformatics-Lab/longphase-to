@@ -1858,11 +1858,11 @@ double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> 
     double q3 = findQuartile(distributionSumMap, 0.75 * (totalCount + 1));
     double purity = 0;
     if (caller == DEEPSOMATIC_TO){
-        purity = -11.5226 + 0.0000*1 + 41.7073*q1 - 5.1209*q3 + 3.1480*lohRatio - 52.2663*q1*q1 + 32.6940*q1*q3 - 9.2913*q1*lohRatio - 8.9495*q3*q3 + 4.3016*q3*lohRatio - 1.3585*lohRatio*lohRatio;
+        purity = -40.7226 + 0.0000*1 + 194.2179*q1 - 13.4902*q3 - 8.6631*lohRatio - 169.4964*q1*q1 - 161.1149*q1*q3 + 71.1042*q1*lohRatio + 74.7865*q3*q3 - 38.3745*q3*lohRatio + 22.1523*lohRatio*lohRatio + 6.5747*q1*q1*q1 + 145.5591*q1*q1*q3 + 25.5427*q1*q1*lohRatio - 4.7007*q1*q3*q3 - 127.0712*q1*q3*lohRatio + 19.2526*q1*lohRatio*lohRatio - 30.2605*q3*q3*q3 + 74.4106*q3*q3*lohRatio - 33.5680*q3*lohRatio*lohRatio - 4.5039*lohRatio*lohRatio*lohRatio;
     }else if (caller == CLAIRS_TO_SS){
-        purity = -11.4671 + 0.0000*1 + 23.0656*q1 + 8.6819*q3 - 14.8336*lohRatio - 20.2295*q1*q1 + 7.9094*q1*q3 - 2.6216*q1*lohRatio - 8.2929*q3*q3 + 18.2641*q3*lohRatio - 2.0730*lohRatio*lohRatio;
+        purity = -40.7226 + 0.0000*1 + 194.2179*q1 - 13.4902*q3 - 8.6631*lohRatio - 169.4964*q1*q1 - 161.1149*q1*q3 + 71.1042*q1*lohRatio + 74.7865*q3*q3 - 38.3745*q3*lohRatio + 22.1523*lohRatio*lohRatio + 6.5747*q1*q1*q1 + 145.5591*q1*q1*q3 + 25.5427*q1*q1*lohRatio - 4.7007*q1*q3*q3 - 127.0712*q1*q3*lohRatio + 19.2526*q1*lohRatio*lohRatio - 30.2605*q3*q3*q3 + 74.4106*q3*q3*lohRatio - 33.5680*q3*lohRatio*lohRatio - 4.5039*lohRatio*lohRatio*lohRatio;
     }else if (caller == CLAIRS_TO_SSRS){
-        purity = -6.8140 + 0.0000*1 + 3.7621*q1 + 11.7074*q3 - 5.7183*lohRatio - 26.4966*q1*q1 + 38.2925*q1*q3 - 3.5957*q1*lohRatio - 20.5632*q3*q3 + 8.7910*q3*lohRatio - 0.5105*lohRatio*lohRatio;
+        purity = -40.7226 + 0.0000*1 + 194.2179*q1 - 13.4902*q3 - 8.6631*lohRatio - 169.4964*q1*q1 - 161.1149*q1*q3 + 71.1042*q1*lohRatio + 74.7865*q3*q3 - 38.3745*q3*lohRatio + 22.1523*lohRatio*lohRatio + 6.5747*q1*q1*q1 + 145.5591*q1*q1*q3 + 25.5427*q1*q1*lohRatio - 4.7007*q1*q3*q3 - 127.0712*q1*q3*lohRatio + 19.2526*q1*lohRatio*lohRatio - 30.2605*q3*q3*q3 + 74.4106*q3*q3*lohRatio - 33.5680*q3*lohRatio*lohRatio - 4.5039*lohRatio*lohRatio*lohRatio;
     }
     // Clamp the purity value between 0 and 1
     return std::max(0.0, std::min(purity, 1.0));

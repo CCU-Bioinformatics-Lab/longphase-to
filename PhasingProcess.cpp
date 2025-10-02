@@ -169,7 +169,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     double purity = PurityCalculator::getPurity(mergedPloidyRatioMap, params.resultPrefix, params.caller, chrInfoMap, fastaParser.chrLength);
     std::cerr << std::endl;
     std::cerr << "purity: " << purity << std::endl;
-    bool highPurity = purity > 0.95;
+    bool highPurity = purity > 0.9;
     if(highPurity){
         std::cerr << "second round phasing, ";
     }
