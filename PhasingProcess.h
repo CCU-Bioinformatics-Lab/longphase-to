@@ -46,6 +46,9 @@ struct PhasingParameters
     
     std::string version;
     std::string command;
+    
+    // If negative, purity is not provided by user and should be estimated
+    double purity = -1.0;
 };
 
 class PhasingProcess
