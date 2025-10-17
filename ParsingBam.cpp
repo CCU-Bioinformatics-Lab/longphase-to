@@ -1310,7 +1310,7 @@ std::vector<std::pair<int, char>> getOrderWindowsDiffRef(const uint32_t *cigar, 
                 return offsetBase;
             }
         }
-        if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N){
+        if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N || cigarOp == EQ){
             continue;
         }
         readPos += direction;

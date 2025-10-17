@@ -62,10 +62,10 @@ class HaplotagProcess
 
     void initFlag(bam1_t *aln, std::string flag);
     
-    int judgeHaplotype(const  bam_hdr_t &bamHdr,const bam1_t &aln, std::string chrName, double percentageThreshold, std::ofstream *tagResult, int &pqValue, const std::string &ref_string);
+    std::string judgeHaplotype(const  bam_hdr_t &bamHdr,const bam1_t &aln, std::string chrName, double percentageThreshold, std::ofstream *tagResult, int &pqValue, const std::string &ref_string);
     void countSNPHaplotype(std::string &base, AlleleHaplotype &haplotypeBase, std::array<int, HAPLOTYPE_SIZE> &countMap, int & HP);
     void countINDELHaplotype(bool isRef, AlleleHaplotype &haplotypeBase, std::array<int, HAPLOTYPE_SIZE> &countMap, int & HP);
-    void getVote(std::array<int, HAPLOTYPE_SIZE> &countMap, double &min, double &max, int &hpResult);
+    void getVote(std::array<int, HAPLOTYPE_SIZE> &countMap, double &min, double &max, std::string &hpResult);
     
     int totalAlignment;
     int totalSupplementary;

@@ -28,6 +28,7 @@ static const char *CORRECT_USAGE_MESSAGE =
 "   --loh                                  output LOH results. default: False\n\n"
 
 "somatic arguments:\n"
+"   --purity=[0~1]                         set sample purity directly; if omitted, estimate automatically.\n"
 "   --disable-calling                      disable longphase calling mode. default: False\n"
 "   --disable-pon-tag                      disable reading the VCF FILTER field PON to determine germline variants. default: False\n"
 "   --pon-file=NAME                        input PON VCF file. determines germline variants using position-based matching.\n"
@@ -55,9 +56,9 @@ static const char *CORRECT_USAGE_MESSAGE =
 "   -m, --readConfidence=[0.5~1]           The confidence of a read being assigned to any haplotype. default:0.65\n"
 "   -n, --snpConfidence=[0.5~1]            The confidence of assigning two alleles of a SNP to different haplotypes. default:0.75\n\n";
 
-static const char* shortopts = "s:b:o:t:r:d:1:a:q:x:p:e:n:m:L:c:i:";
+static const char* shortopts = "s:b:o:t:r:d:1:a:q:x:p:e:n:m:L:c:";
 
-enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT, OUTPUT_LOH, OUTPUT_SGE, OUTPUT_LGE, OUTPUT_GE, DISABLE_PON_TAG, DISABLE_CALLING};
+enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT, OUTPUT_LOH, OUTPUT_SGE, OUTPUT_LGE, OUTPUT_GE, DISABLE_PON_TAG, DISABLE_CALLING, OPT_PURITY};
 
 static const struct option longopts[] = { 
     { "help",                 no_argument,        NULL, OPT_HELP },
@@ -93,6 +94,7 @@ static const struct option longopts[] = {
     { "readConfidence",       required_argument,  NULL, 'm' },
     { "overlapThreshold",     required_argument,  NULL, 'L' },
     { "caller",               required_argument,  NULL, 'c' },
+    { "purity",               required_argument,  NULL, OPT_PURITY },
     { NULL, 0, NULL, 0 }
 };
 
@@ -139,6 +141,7 @@ namespace opt
     static bool outputSGE = false;
     static bool outputLGE = false;
     static bool outputGE = true;
+    static double purity = -1.0; // user-provided purity; negative means unset
 }
 
 void PhasingOptions(int argc, char** argv)
@@ -186,6 +189,7 @@ void PhasingOptions(int argc, char** argv)
         case OUTPUT_GE: opt::outputGE=true; break;
         case DISABLE_PON_TAG: opt::disablePonTag=true; break;
         case DISABLE_CALLING: opt::disableCalling=true; break;
+        case OPT_PURITY: arg >> opt::purity; break;
         case OPT_HELP:
             std::cout << CORRECT_USAGE_MESSAGE;
             exit(EXIT_SUCCESS);
@@ -317,6 +321,15 @@ void PhasingOptions(int argc, char** argv)
                   << "\n please check -L, --overlapThreshold=[0~1]\n";
         die = true;
     }
+
+    if ( opt::purity >= 0 ){
+        if ( opt::purity > 1.0 ){
+            std::cerr << SUBPROGRAM " invalid purity. value: "
+                      << opt::purity
+                      << "\n please check --purity=[0~1]\n";
+            die = true;
+        }
+    }
     
     if ( opt::readConfidence < 0.5 || opt::readConfidence > 1 ){
         std::cerr << SUBPROGRAM " invalid readConfidence. value: " 
@@ -404,6 +417,7 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     ecParams.outputSGE = opt::outputSGE;
     ecParams.outputLGE = opt::outputLGE;
     ecParams.outputGE = opt::outputGE;
+    ecParams.purity = opt::purity;
 
     PhasingProcess processor(ecParams);
 
