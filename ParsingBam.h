@@ -114,6 +114,7 @@ class BaseVairantParser{
         bool commandLine;
         PhasingParameters *params;
         double purity;
+        bool hasLPNonSomaticFilter;
 
     public:
         BaseVairantParser();
