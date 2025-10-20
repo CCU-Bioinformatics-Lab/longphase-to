@@ -181,7 +181,7 @@ void FormatSample::setGTFlagAndValue(const std::string &flagBase, const std::str
     }
 }
 
-BaseVairantParser::BaseVairantParser() : commandLine(false) {}
+BaseVairantParser::BaseVairantParser() : commandLine(false), hasLPNonSomaticFilter(false) {}
 
 BaseVairantParser::~BaseVairantParser(){}
 
@@ -348,6 +348,10 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
                 formatDef->is_present = true;
             }
         }
+        // detect existing LP_nonSomatic FILTER definition in header
+        if (input.rfind("##FILTER=<ID=LP_nonSomatic", 0) == 0) {
+            hasLPNonSomaticFilter = true;
+        }
         resultVcf << input << "\n";
     }
     else if ( input.substr(0, 6) == "#CHROM" || input.substr(0, 6) == "#chrom" ){
@@ -361,6 +365,10 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
             resultVcf << "##longphaseVersion=" << params->version << "\n";
             resultVcf << "##commandline=\"" << params->command << "\"\n";
             resultVcf << "##tumor_purity=" << purity << "\n";
+            // inject LP_nonSomatic FILTER definition if enabled and missing in header
+            if (!params->disableRefineSomatic && !hasLPNonSomaticFilter){
+                resultVcf << "##FILTER=<ID=LP_nonSomatic,Description=\"Non-somatic variant tagged by longphase-to\">\n";
+            }
             commandLine = true;
         }
         resultVcf << input << "\n";
@@ -390,6 +398,22 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
             phasingResultPtr = &posPhasingResultIter->second;
             phasedCount = phasingResultPtr->genotype.size();
             haplotypeIter = phasingResultPtr->genotype.begin();
+        }
+
+        // refine FILTER field based on somatic status if not disabled
+        if (!params->disableRefineSomatic) {
+            bool isSomatic = (phasingResultPtr != nullptr && phasingResultPtr->somatic);
+            std::string &filterField = fields[FILTER];
+            if (isSomatic) {
+                if (filterField != "PASS") {
+                    filterField = "PASS";
+                }
+            } else {
+                // non-somatic: PASS and '.' -> change to LP_nonSomatic
+                if (filterField == "PASS" || filterField == ".") {
+                    filterField = "LP_nonSomatic";
+                }
+            }
         }
 
         for(size_t i = 0; i < PHASING_RESULT_SIZE; ++i) {
