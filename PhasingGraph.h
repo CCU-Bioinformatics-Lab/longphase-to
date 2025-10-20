@@ -210,7 +210,7 @@ class VairiantGraph{
 
         void edgeConnectResult(std::vector<LOHSegment> &LOHSegments);
 
-        int patternMining(ThreePointEdge threePointEdge);
+        SomaticVote patternMining(ThreePointEdge threePointEdge);
         
         std::pair<float,float> Onelongcase( std::vector<VoteResult> vote ) ;
 

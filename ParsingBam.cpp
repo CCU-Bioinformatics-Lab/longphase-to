@@ -808,13 +808,14 @@ VariantGenotype SnpParser::confirmRequiredGT(const bcf_hdr_t *hdr, bcf1_t *line,
     // heterozygous SNP
     if ((gt[0] == 2 && gt[1] == 4) || (gt[0] == 4 && gt[1] == 2) || // 0/1, 1/0
         (gt[0] == 2 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 3) || // 0|1, 1|0
-        (gt[0] == 0 && gt[1] == 3) || (gt[0] == 2 && gt[1] == 1)) { // .|0, 0|.
+        (gt[0] == 2 && gt[1] == 3)) { // 0|0
         result = HET;
     }
     // homozygous SNP
     else if ((gt[0] == 4 && gt[1] == 4) || // 1/1
              (gt[0] == 4 && gt[1] == 5) || // 1|1
-             (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1)) { // .|1, 1|.
+             (gt[0] == 0 && gt[1] == 5) || (gt[0] == 4 && gt[1] == 1) || // .|1, 1|.
+             (gt[0] == 0 && gt[1] == 3) || (gt[0] == 2 && gt[1] == 1)){  // .|0, 0|.
         result = HOM;
     }
     free(gt);
@@ -1310,7 +1311,7 @@ std::vector<std::pair<int, char>> getOrderWindowsDiffRef(const uint32_t *cigar, 
                 return offsetBase;
             }
         }
-        if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N){
+        if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N || cigarOp == EQ){
             continue;
         }
         readPos += direction;
