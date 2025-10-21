@@ -115,6 +115,8 @@ class BaseVairantParser{
         PhasingParameters *params;
         double purity;
         bool hasLPNonSomaticFilter = false;
+        bool hasLPPONFilter = false;
+        virtual bool isPON(const std::string &chr, int pos, const std::vector<std::string> &fields) const;
 
     public:
         BaseVairantParser();
@@ -183,6 +185,9 @@ class SnpParser : public BaseVairantParser{
         void filterSNP(std::string chr, std::vector<ReadVariant> &readVariantVec, std::string &chr_reference);
 
         bool checkType(const VariantType type) const override;
+
+    protected:
+        bool isPON(const std::string &chr, int pos, const std::vector<std::string> &fields) const override;
 };
 
 class SVParser : public BaseVairantParser{

@@ -181,9 +181,14 @@ void FormatSample::setGTFlagAndValue(const std::string &flagBase, const std::str
     }
 }
 
-BaseVairantParser::BaseVairantParser() : commandLine(false), hasLPNonSomaticFilter(false) {}
+BaseVairantParser::BaseVairantParser() : commandLine(false), hasLPNonSomaticFilter(false), hasLPPONFilter(false) {}
 
 BaseVairantParser::~BaseVairantParser(){}
+
+bool BaseVairantParser::isPON(const std::string &chr, int pos, const std::vector<std::string> &fields) const {
+    (void)chr; (void)pos; (void)fields;
+    return false;
+}
 
 void BaseVairantParser::compressParser(std::string &variantFile){
     gzFile file = gzopen(variantFile.c_str(), "rb");
@@ -348,9 +353,12 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
                 formatDef->is_present = true;
             }
         }
-        // detect existing LP_nonSomatic FILTER definition in header
+        // detect existing LP_nonSomatic and LP_PON FILTER definition in header
         if (input.rfind("##FILTER=<ID=LP_nonSomatic", 0) == 0) {
             hasLPNonSomaticFilter = true;
+        }
+        if (input.rfind("##FILTER=<ID=LP_PON", 0) == 0) {
+            hasLPPONFilter = true;
         }
         resultVcf << input << "\n";
     }
@@ -365,9 +373,12 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
             resultVcf << "##longphaseVersion=" << params->version << "\n";
             resultVcf << "##commandline=\"" << params->command << "\"\n";
             resultVcf << "##tumor_purity=" << purity << "\n";
-            // inject LP_nonSomatic FILTER definition if enabled and missing in header
+            // inject LP_nonSomatic and LP_PON FILTER definition if enabled and missing in header
             if (!params->disableRefineSomatic && !hasLPNonSomaticFilter){
                 resultVcf << "##FILTER=<ID=LP_nonSomatic,Description=\"Non-somatic variant tagged by longphase-to\">\n";
+            }
+            if (!params->disableRefineSomatic && !hasLPPONFilter){
+                resultVcf << "##FILTER=<ID=LP_PON,Description=\"PON variant tagged by longphase-to\">\n";
             }
             commandLine = true;
         }
@@ -400,19 +411,18 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
             haplotypeIter = phasingResultPtr->genotype.begin();
         }
 
-        // refine FILTER field based on somatic status if not disabled
+        // refine FILTER field based on PON and somatic status if not disabled
         if (!params->disableRefineSomatic) {
             bool isSomatic = (phasingResultPtr != nullptr && phasingResultPtr->somatic);
+            const std::string &chr = fields[CHROM];
+            int pos = std::stoi(fields[POS]) - 1;
             std::string &filterField = fields[FILTER];
-            if (isSomatic) {
-                if (filterField != "PASS") {
-                    filterField = "PASS";
-                }
+            if (isPON(chr, pos, fields)) {
+                filterField = "LP_PON";
+            } else if (isSomatic) {
+                filterField = "PASS";
             } else {
-                // non-somatic: PASS and '.' -> change to LP_nonSomatic
-                if (filterField == "PASS" || filterField == ".") {
-                    filterField = "LP_nonSomatic";
-                }
+                filterField = "LP_nonSomatic";
             }
         }
 
@@ -442,6 +452,28 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
 bool SnpParser::checkType(const VariantType type) const {
     if(type == SNP|| type == INDEL || type == DANGER_INDEL){
         return true;
+    }
+    return false;
+}
+bool SnpParser::isPON(const std::string &chr, int pos, const std::vector<std::string> &fields) const {
+    // Prefer map-based PON knowledge
+    if (chrVariant != nullptr) {
+        auto chrIt = chrVariant->find(chr);
+        if (chrIt != chrVariant->end()) {
+            auto posIt = chrIt->second.find(pos);
+            if (posIt != chrIt->second.end()) {
+                if (posIt->second.originType == PON) return true;
+            }
+        }
+    }
+    // Fallback: respect input FILTER if PON-tag reading is enabled
+    if (!params->disablePonTag) {
+        const std::string &inFilter = fields[FILTER];
+        if (inFilter.find("PON") != std::string::npos ||
+            inFilter.find("NonSomatic") != std::string::npos ||
+            inFilter.find("GERMLINE") != std::string::npos) {
+            return true;
+        }
     }
     return false;
 }
