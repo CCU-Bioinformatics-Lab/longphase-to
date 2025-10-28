@@ -466,15 +466,6 @@ bool SnpParser::isPON(const std::string &chr, int pos, const std::vector<std::st
             }
         }
     }
-    // Fallback: respect input FILTER if PON-tag reading is enabled
-    if (!params->disablePonTag) {
-        const std::string &inFilter = fields[FILTER];
-        if (inFilter.find("PON") != std::string::npos ||
-            inFilter.find("NonSomatic") != std::string::npos ||
-            inFilter.find("GERMLINE") != std::string::npos) {
-            return true;
-        }
-    }
     return false;
 }
 bool SVParser::checkType(const VariantType type) const {
