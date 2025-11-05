@@ -295,22 +295,25 @@ SomaticVote VairiantGraph::patternMining(ThreePointEdge threePointEdge, bool lef
             float x = threePointEdge[edge[0]];
             float y = threePointEdge[edge[1]];
             float z = threePointEdge[edge[2]];
-            // snv VH regression
-            float score = +0.003754 +0.014223*x +0.015017*y +0.011169*z -0.000769*x*x +0.000674*x*y +0.007199*x*z -0.004500*y*y +0.041002*y*z -0.009079*z*z +0.000015*x*x*x +0.000010*x*x*y -0.000177*x*x*z -0.000033*x*y*y -0.000075*x*y*z -0.000055*x*z*z +0.000111*y*y*y -0.000754*y*y*z -0.000201*y*z*z +0.000092*z*z*z;
+            float score;
             float VH_threshold = 0.5;
             if (x >= thirdLargest && y >= thirdLargest &&
                 x >= condition && y >= condition &&
                 z >= thirdLargest) {
-                if (params->phaseIndel){
-                    // check if this somatic position is an indel
-                    if ((pattern.vote >= 2 && pattern.vote <= 5 && middlePosIndel) ||
+                // check if this somatic position is an indel
+                if (params->phaseIndel && (
+                        (pattern.vote >= 2 && pattern.vote <= 5 && middlePosIndel) ||
                         (pattern.vote >= 6 && pattern.vote <= 9 && rightPosIndel) ||
-                        (pattern.vote >= 10 && pattern.vote <= 13 && leftPosIndel)){
-                        // indel VH regression
-                        score = -0.2337f + 0.7643f * x + 0.7979f * y - 0.7473f * z;
-                        VH_threshold = 0.5;
-                    }
+                        (pattern.vote >= 10 && pattern.vote <= 13 && leftPosIndel)
+                )) {
+                    // indel VH regression
+                    score = -0.2337f + 0.7643f * x + 0.7979f * y - 0.7473f * z;
                 }
+                else {
+                    // snv VH regression
+                    score = +0.003754 +0.014223*x +0.015017*y +0.011169*z -0.000769*x*x +0.000674*x*y +0.007199*x*z -0.004500*y*y +0.041002*y*z -0.009079*z*z +0.000015*x*x*x +0.000010*x*x*y -0.000177*x*x*z -0.000033*x*y*y -0.000075*x*y*z -0.000055*x*z*z +0.000111*y*y*y -0.000754*y*y*z -0.000201*y*z*z +0.000092*z*z*z;
+                }
+
                 float p = 1.0f / (1.0f + std::exp(-score));
                 if (p >= VH_threshold){
                     vote = pattern.vote;
