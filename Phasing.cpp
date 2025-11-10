@@ -143,7 +143,7 @@ namespace opt
     static bool outputLOH = false;
     static bool outputSGE = false;
     static bool outputLGE = false;
-    static bool outputGE = true;
+    static bool outputGE = false;
     static double purity = -1.0; // user-provided purity; negative means unset
 }
 
