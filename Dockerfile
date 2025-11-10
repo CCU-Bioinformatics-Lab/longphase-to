@@ -1,19 +1,44 @@
-FROM ubuntu:20.04
-LABEL maintainer="https://github.com/twolinin/longphase"
-LABEL version="1.5.1"
-
+# ========= Build stage =========
+FROM ubuntu:20.04 AS build
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VERSION=v1.0.0
 RUN apt-get update && \
-    apt-get install -y git g++ gcc autoconf make zlib1g-dev libbz2-dev liblzma-dev && \
-    rm -rf /var/lib/apt/lists/* 
+    apt-get install -y --no-install-recommends \
+      git g++ gcc autoconf automake libtool make \
+      zlib1g-dev libbz2-dev liblzma-dev ca-certificates  && \
+    rm -rf /var/lib/apt/lists/*
 
-WORKDIR /opt/longphase
-RUN git clone https://github.com/twolinin/longphase.git /opt/longphase && \
-    autoreconf -i && \
-    ./configure && \
-    make -j 4 && \
-    rm -rf /opt/longphase/.git
+WORKDIR /src
+RUN git clone --depth 1 \
+    https://github.com/CCU-Bioinformatics-Lab/longphase-to.git .
 
-ENV PATH="${PATH}":${HOME}/bin:/opt/longphase
+# make longphase-to binary
+RUN autoreconf -i && \
+    ./configure --prefix=/usr/local && \
+    make -j"$(nproc)" && \
+    mv ./longphase-to /usr/local/bin/longphase-to && \
+    strip --strip-unneeded /usr/local/bin/longphase-to || true
 
-CMD ["longphase", "phase", "--help"]
-#docker run -v "/gpu_disk2/jyunhong104/sup/:/input" -v "/gpu_disk/zhenyu111/longphase/output_longphase/:/output" longphase:1.5.1 longphase phase -s "/input/hg002.wf_snp.vcf.gz" -r "/input/GCA_000001405.15_GRCh38_no_alt_analysis_set.fa" -b "/input/hg002.sup.10x.bam" -t 8 -o "/output/longphase" --ont
+# ========= Runtime stage =========
+FROM ubuntu:20.04 AS runtime
+ARG DEBIAN_FRONTEND=noninteractive
+# install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      zlib1g libbz2-1.0 liblzma5 libstdc++6 libgomp1 && \
+    rm -rf /var/lib/apt/lists/*
+
+# copy installed files
+COPY --from=build /usr/local /usr/local
+
+# OCI labels
+LABEL org.opencontainers.image.title="longphase-to"
+LABEL org.opencontainers.image.source="https://github.com/CCU-Bioinformatics-Lab/longphase-to"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.authors="CCU Bioinformatics Lab"
+
+ENV PATH="/usr/local/bin:${PATH}"
+WORKDIR /work
+
+ENTRYPOINT ["longphase-to"]
+CMD ["--help"]
