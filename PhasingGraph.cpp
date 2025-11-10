@@ -264,7 +264,7 @@ std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, Varia
     return std::make_pair( refEdge, altEdge );
 }
 
-SomaticVote VairiantGraph::patternMining(ThreePointEdge threePointEdge){
+SomaticVote VairiantGraph::patternMining(ThreePointEdge threePointEdge, bool leftPosIndel, bool middlePosIndel, bool rightPosIndel){
     constexpr float condition = 2;
     SomaticVote vote = VOTE_UNDEFINED;
 
@@ -292,13 +292,33 @@ SomaticVote VairiantGraph::patternMining(ThreePointEdge threePointEdge){
     if (thirdLargest > 0.0f) {
         for (auto &pattern : highSomaticPatterns) {
             const auto &edge = pattern.edges;
-            if (threePointEdge[edge[0]] >= thirdLargest &&
-                threePointEdge[edge[1]] >= thirdLargest &&
-                threePointEdge[edge[0]] >= condition &&
-                threePointEdge[edge[1]] >= condition &&
-                threePointEdge[edge[2]] >= thirdLargest) {
-                vote = pattern.vote;
-                break;
+            float x = threePointEdge[edge[0]];
+            float y = threePointEdge[edge[1]];
+            float z = threePointEdge[edge[2]];
+            float score;
+            float VH_threshold = 0.5;
+            if (x >= thirdLargest && y >= thirdLargest &&
+                x >= condition && y >= condition &&
+                z >= thirdLargest) {
+                // check if this somatic position is an indel
+                if (params->phaseIndel && (
+                        (pattern.vote >= 2 && pattern.vote <= 5 && middlePosIndel) ||
+                        (pattern.vote >= 6 && pattern.vote <= 9 && rightPosIndel) ||
+                        (pattern.vote >= 10 && pattern.vote <= 13 && leftPosIndel)
+                )) {
+                    // indel VH regression
+                    score = -0.2337f + 0.7643f * x + 0.7979f * y - 0.7473f * z;
+                }
+                else {
+                    // snv VH regression
+                    score = +0.003754 +0.014223*x +0.015017*y +0.011169*z -0.000769*x*x +0.000674*x*y +0.007199*x*z -0.004500*y*y +0.041002*y*z -0.009079*z*z +0.000015*x*x*x +0.000010*x*x*y -0.000177*x*x*z -0.000033*x*y*y -0.000075*x*y*z -0.000055*x*z*z +0.000111*y*y*y -0.000754*y*y*z -0.000201*y*z*z +0.000092*z*z*z;
+                }
+
+                float p = 1.0f / (1.0f + std::exp(-score));
+                if (p >= VH_threshold){
+                    vote = pattern.vote;
+                    break;
+                }
             }
         }
     }
@@ -306,8 +326,9 @@ SomaticVote VairiantGraph::patternMining(ThreePointEdge threePointEdge){
     if(vote == VOTE_UNDEFINED && secondLargest/2 > thirdLargest){
         for(auto &pattern : lowSomaticPatterns){
             const auto &edge = pattern.edges;
-            if (threePointEdge[edge[1]] >= secondLargest && 
-                threePointEdge[edge[2]] >= secondLargest) {
+            if (threePointEdge[edge[0]] >= secondLargest && 
+                threePointEdge[edge[1]] >= secondLargest &&
+                threePointEdge[edge[2]] >= thirdLargest) {
                 vote = pattern.vote;
                 break;
             }
@@ -859,7 +880,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
 }
 
 void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
-    std::map<int, std::array<int, 18>> voteResult;
+    std::map<int, std::array<int, 25>> voteResult;
     std::map<int, double> totalArtifactPathRatio;
     std::map<int, VariantInfo>::iterator nodeIter;
     std::map<int, VariantInfo>::iterator nextNodeIter;
@@ -908,20 +929,23 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
                         j++;
 
                         ThreePointEdge threePointEdge = edge->findThreePointEdge(nextNodeIter->first,nextNextNodeIter->first);
-                        SomaticVote voteTmp = patternMining(threePointEdge);
+                        bool leftPosIndel = variantPosType->find(nodeIter->first)->second.type == INDEL;
+                        bool middlePosIndel = variantPosType->find(nextNodeIter->first)->second.type == INDEL;
+                        bool rightPosIndel = variantPosType->find(nextNextNodeIter->first)->second.type == INDEL;
+                        SomaticVote voteTmp = patternMining(threePointEdge, leftPosIndel, middlePosIndel, rightPosIndel);
                         
                         if (voteTmp == LEFT_HIGH_SA_PAR || voteTmp == LEFT_HIGH_SR_PAR || voteTmp == LEFT_HIGH_SA_CR || voteTmp == LEFT_HIGH_SR_CR || 
-                            voteTmp == LEFT_LOW_SA_PAR){
+                            voteTmp == LEFT_LOW_1 || voteTmp == LEFT_LOW_2 || voteTmp == LEFT_LOW_3){
                             voteResult[nodeIter->first][voteTmp]++;
                             voteResult[nextNodeIter->first][DISAGREE]++;
                             voteResult[nextNextNodeIter->first][DISAGREE]++;
                         } else if (voteTmp == RIGHT_HIGH_SA_PAR || voteTmp == RIGHT_HIGH_SR_PAR || voteTmp == RIGHT_HIGH_SA_CR || voteTmp == RIGHT_HIGH_SR_CR || 
-                                voteTmp == RIGHT_LOW_SA_PAR){
+                                voteTmp == RIGHT_LOW_1 || voteTmp == RIGHT_LOW_2 || voteTmp == RIGHT_LOW_3){
                             voteResult[nextNextNodeIter->first][voteTmp]++;
                             voteResult[nextNodeIter->first][DISAGREE]++;
                             voteResult[nodeIter->first][DISAGREE]++;
                         } else if (voteTmp == MID_HIGH_SA_PAR || voteTmp == MID_HIGH_SR_PAR || voteTmp == MID_HIGH_SA_CR || voteTmp == MID_HIGH_SR_CR || 
-                                   voteTmp == MID_LOW_SA_PAR || voteTmp == DISAGREE){
+                                   voteTmp == MID_LOW_1 || voteTmp == MID_LOW_2 || voteTmp == MID_LOW_3 || voteTmp == DISAGREE){
                             voteResult[nextNodeIter->first][voteTmp]++;
                             voteResult[nextNextNodeIter->first][DISAGREE]++;
                             voteResult[nodeIter->first][DISAGREE]++;
@@ -978,7 +1002,9 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
             int highRightVote = voteResultArray[RIGHT_HIGH_SR_PAR] + voteResultArray[RIGHT_HIGH_SA_CR] + voteResultArray[RIGHT_HIGH_SR_CR] + voteResultArray[RIGHT_HIGH_SA_PAR];
             int highMidVote = voteResultArray[MID_HIGH_SR_CR] + voteResultArray[MID_HIGH_SA_PAR] + voteResultArray[MID_HIGH_SR_PAR] + voteResultArray[MID_HIGH_SA_CR];
             int highAllVote = highLeftVote + highRightVote + highMidVote;
-            int lowVote = voteResultArray[MID_LOW_SA_PAR]+voteResultArray[LEFT_LOW_SA_PAR]+voteResultArray[RIGHT_LOW_SA_PAR];
+            int lowVote = voteResultArray[MID_LOW_1] + voteResultArray[MID_LOW_2] + voteResultArray[MID_LOW_3]
+                            + voteResultArray[LEFT_LOW_1] + voteResultArray[LEFT_LOW_2] + voteResultArray[LEFT_LOW_3]
+                            + voteResultArray[RIGHT_LOW_1] + voteResultArray[RIGHT_LOW_2] + voteResultArray[RIGHT_LOW_3];
             float allLowVote = voteResultArray[DISAGREE] + lowVote;
             double totalRaito = totalArtifactPathRatio[nodeIter->first];
             if((highAllVote > 0 && (totalRaito/highAllVote) > 0.8) || (lowVote > 0 && (lowVote/allLowVote) >= 0.2)){
