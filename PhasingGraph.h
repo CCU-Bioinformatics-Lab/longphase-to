@@ -41,9 +41,17 @@ enum SomaticVote{
     LEFT_HIGH_SR_CR = 12,
     LEFT_HIGH_SA_CR = 13,
 
-    MID_LOW_SA_PAR = 14,
-    LEFT_LOW_SA_PAR = 15,
-    RIGHT_LOW_SA_PAR = 16,
+    MID_LOW_1 = 14,
+    MID_LOW_2 = 15,
+    MID_LOW_3 = 16,
+
+    LEFT_LOW_1 = 17,
+    LEFT_LOW_2 = 18,
+    LEFT_LOW_3 = 19,
+
+    RIGHT_LOW_1 = 20,
+    RIGHT_LOW_2 = 21,
+    RIGHT_LOW_3 = 22,
 };
 
 struct SomaticPattern {
@@ -68,10 +76,18 @@ constexpr std::array<SomaticPattern, 12> highSomaticPatterns = {{
     {{EDGE_AAR, EDGE_RRR, EDGE_RRA}, RIGHT_HIGH_SA_PAR},
 }};
 
-constexpr std::array<SomaticPattern, 3> lowSomaticPatterns = {{
-    {{EDGE_ARA, EDGE_ARA, EDGE_AAA}, MID_LOW_SA_PAR},
-    {{EDGE_RAA, EDGE_RAA, EDGE_AAA}, LEFT_LOW_SA_PAR},
-    {{EDGE_AAR, EDGE_AAR, EDGE_AAA}, RIGHT_LOW_SA_PAR},
+constexpr std::array<SomaticPattern, 9> lowSomaticPatterns = {{
+    {{EDGE_ARA, EDGE_AAA, EDGE_RRR}, MID_LOW_1},
+    {{EDGE_ARA, EDGE_AAA, EDGE_RRA}, MID_LOW_2},
+    {{EDGE_ARA, EDGE_AAA, EDGE_ARR}, MID_LOW_3},
+
+    {{EDGE_RAA, EDGE_AAA, EDGE_RRR}, LEFT_LOW_1},
+    {{EDGE_RAA, EDGE_AAA, EDGE_RRA}, LEFT_LOW_2},
+    {{EDGE_RAA, EDGE_AAA, EDGE_RAR}, LEFT_LOW_3},
+
+    {{EDGE_AAR, EDGE_AAA, EDGE_RRR}, RIGHT_LOW_1},
+    {{EDGE_AAR, EDGE_AAA, EDGE_RAR}, RIGHT_LOW_2},
+    {{EDGE_AAR, EDGE_AAA, EDGE_ARR}, RIGHT_LOW_3},
 }};
 
 class SubEdge{
@@ -210,7 +226,7 @@ class VairiantGraph{
 
         void edgeConnectResult(std::vector<LOHSegment> &LOHSegments);
 
-        SomaticVote patternMining(ThreePointEdge threePointEdge);
+        SomaticVote patternMining(ThreePointEdge threePointEdge, bool leftPosIndel, bool middlePosIndel, bool rightPosIndel);
         
         std::pair<float,float> Onelongcase( std::vector<VoteResult> vote ) ;
 

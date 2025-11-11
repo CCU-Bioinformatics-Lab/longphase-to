@@ -2,12 +2,19 @@
 **LongPhase-TO** is a tumor-only variant phasing and analysis pipeline, extending [**LongPhase**](https://github.com/twolinin/longphase) for long-read sequencing data.  
 It supports:
 - **LOH (Loss of Heterozygosity) Detection**
+  ![LOH_Result](https://github.com/user-attachments/assets/a01dd79b-12c7-4cc9-98be-2ba14937078e)
 - **Somatic Variant Calling**
+  ![snv_metrics_ssrs](https://github.com/user-attachments/assets/3a0e19dc-10ca-4f2a-9a63-4bfc05c60c72)
 - **Joint Phasing of Germline and Somatic Variants**
+  ![phasing](https://github.com/user-attachments/assets/918ea204-e55b-468f-ba39-5f851672343b)
 - **Tumor Purity Estimation**
+  ![purity_estimation](https://github.com/user-attachments/assets/f3454200-e088-4eed-9d15-193bb49a2c6e)
 - **Haplotagging**
+  ![haplotag](https://github.com/user-attachments/assets/8a015d74-fcd0-40ab-8507-26e7eace6bbf)
+
 
 LongPhase-TO Overview:
+![LongPhase_TO_Overview](https://github.com/user-attachments/assets/31bf83b8-077e-4aa9-aff6-7d9fab701ef1)
 
 ---
 [LongPhase-TO](#longphase-to)
@@ -15,43 +22,50 @@ LongPhase-TO Overview:
 - [Usage](#usage)
   - [Phase command](#phase-command)
     - [SNP only phasing](./docs/phase.md#snp-only-phasing)
-    - [Complete list of Phase parameters](./docs/phase.md#the-complete-list-of-phase-parameters)
+    - [Complete list of Phase parameters](./docs/phase.md#complete-list-of-phase-parameters)
     - [Phased Genotype Output Format](./docs/phase.md#phased-genotype-output-format)
+    - [Haplotype-aware Variant Re-calling Output Format](./docs/phase.md#haplotype-aware-variant-re-calling-output-format)
     - [Output files of Purity](./docs/phase.md#output-files-of-Purity)
   - [Haplotag command](#haplotag-command)
-    - [Complete list of Haplotag parameters](./docs/haplotag.md#the-complete-list-of-haplotag-parameters)
+    - [Complete list of Haplotag parameters](./docs/haplotag.md#complete-list-of-haplotag-parameters)
 - [Input Preparation](#input-preparation)
   - [Generate reference index](./docs/input_preparation.md#generate-reference-index)
   - [Generate alignment and index files](./docs/input_preparation.md#generate-alignment-and-index-files)
   - [Generate single nucleotide polymorphism (SNP) file](#generate-single-nucleotide-polymorphism-snp-file)
     - [ClairS-TO Caller](#clairs-to-caller)
     - [DeepSomatic Caller](#deepsomatic-caller)
-  - [Downloads panels of normals (PoNs) file](#downloads-panels-of-normals-pons-file)
+  - [Panels of normals (PoNs) file](#panels-of-normals-pons-file)
 - [Citation](#citation)
 - [Contact](#contact)
 
 ## Installation
-You are recommended to download a [linux 64bit binary release](https://github.com/twolinin/longphase/releases/download/v1.7.3/longphase_linux-x64.tar.xz) without compilation. 
+You are recommended to download a [linux 64bit binary release](https://github.com/CCU-Bioinformatics-Lab/longphase-to/releases/download/v1.0.0/longphase-to-linux-x64.tar.xz) without compilation. 
 
-```
-wget https://github.com/twolinin/longphase/releases/download/v1.7.3/longphase_linux-x64.tar.xz
-tar -xJf longphase_linux-x64.tar.xz
+```bash
+wget https://github.com/CCU-Bioinformatics-Lab/longphase-to/releases/download/v1.0.0/longphase-to-linux-x64.tar.xz
+tar -xJf longphase-to-linux-x64.tar.xz
 ```
 
-An executable file, longphase_linux-x64, can be executed directly. If you need to compile a local version, you can clone and compile using the following commands, and make sure that the environment has zlib installed. If you require setting up a virtual environment, we also provide a [Dockerfile](https://github.com/twolinin/longphase/blob/main/Dockerfile).
+An executable file, longphase_linux-x64, can be executed directly. If you need to compile a local version, you can clone and compile using the following commands, and make sure that the environment has zlib installed.
 
-```
-git clone https://github.com/sloth-eat-pudding/longphase-to.git
+```bash
+git clone https://github.com/CCU-Bioinformatics-Lab/longphase-to.git
 cd longphase-to
 autoreconf -i
 ./configure
 make -j 4
 ```
 
+If you require setting up a virtual environment, we also provide a [Dockerfile](./Dockerfile).
+```bash
+wget https://github.com/CCU-Bioinformatics-Lab/longphase-to/blob/feature/tumor-only/Dockerfile
+docker build -t longphase-to:latest .
+```
+
 ## Usage
 ### Phase command
-For SNP-only phasing, the input of LongPhase consists of SNPs in VCF (e.g., SNP.vcf), an indexed reference in Fasta (e.g., reference.fasta, reference.fasta.fai), and one (or multiple) indexed read-to-reference alignment in BAM (e.g., alignment1.bam, alignment1.bai, alignment2.bam, ...) (see [Input Preparation](#input-preparation)). The users should specify the sequencing platform (--ont for Nanopore and --pb for PacBio). An example of SNP phasing usage is shown below.
-```
+For SNP-only phasing, the input of LongPhase consists of SNPs in VCF (e.g., SNP.vcf), an indexed reference in Fasta (e.g., reference.fasta, reference.fasta.fai), and one (or multiple) indexed read-to-reference alignment in BAM (e.g., alignment1.bam, alignment1.bai, alignment2.bam, ...) (see [Input Preparation](#input-preparation)). The users should specify the sequencing platform (--ont for Nanopore and --pb for PacBio).For information on using PoN files, refer to [Panels of normals (PoNs) file](#panels-of-normals-pons-file) An example of SNP phasing usage is shown below.
+```bash
 # caller options: clairs_to_ss, clairs_to_ssrs, deepsomatic_to
 
 longphase-to phase \
@@ -67,22 +81,45 @@ longphase-to phase \
 --ont \ # or --pb for PacBio Hifi
 # --loh # if need out loh bed
 ```
-- [Complete list of Phase parameters](./docs/phase.md#the-complete-list-of-phase-parameters)
+
+**Using Docker:**
+
+```bash
+INPUT_DIR="/path/to/input"
+OUTPUT_DIR="/path/to/output"
+
+docker run -it \
+  -v ${INPUT_DIR}:${INPUT_DIR} \
+  -v ${OUTPUT_DIR}:${OUTPUT_DIR} \
+  -u $(id -u):$(id -g) \
+  longphase-to:latest phase \
+  -s ${INPUT_DIR}/SNP.vcf \
+  -b ${INPUT_DIR}/alignment1.bam \
+  -r ${INPUT_DIR}/reference.fasta \
+  -t 8 \
+  -o ${OUTPUT_DIR}/phased_prefix \
+  --caller caller_options \
+  --pon-file ${INPUT_DIR}/pon1.vcf,${INPUT_DIR}/pon2.vcf \
+  --strict-pon-file ${INPUT_DIR}/pon3.vcf,${INPUT_DIR}/pon4.vcf \
+  --ont
+```
+
+- [Complete list of Phase parameters](./docs/phase.md#complete-list-of-phase-parameters)
 - [Phased Genotype Output Format](./docs/phase.md#phased-genotype-output-format)
+- [Haplotype-aware Variant Re-calling Output Format](./docs/phase.md#haplotype-aware-variant-re-calling-output-format)
 - [Purity Output Format](./docs/phase.md#phased-genotype-output-format)
 
 ### Haplotag command
 This command tags (assigns) each read (in BAM) to one haplotype in the phased SNP/SV VCF. i.e., reads will be tagged as HP:i:1 or HP:i:2. In addition, the haplotype block of each read is stored in the PS tag. The phased VCF can be also generated by other programs as long as the PS or HP tags are encoded. The author can specify ```--log``` for additionally output a plain-text file containing haplotype tags of each read without parsing BAM.
-```
+```bash
 longphase-to haplotag \
 -r reference.fasta \
 -s phased_snp.vcf \
---sv-file phased_sv.vcf \
 -b alignment.bam \
 -t 8 \
 -o tagged_bam_prefix
 ```
-- [Complete list of Haplotag parameters](./docs/haplotag.md#the-complete-list-of-haplotag-parameters)
+- [Complete list of Haplotag parameters](./docs/haplotag.md#complete-list-of-haplotag-parameters)
 
 ## Input Preparation
 - [Generate reference index](./docs/input_preparation.md#generate-reference-index)
@@ -92,7 +129,7 @@ longphase-to haplotag \
 e.g. [ClairS-TO](https://github.com/HKU-BAL/ClairS-TO) or [DeepSomatic](https://github.com/google/deepsomatic) pipeline.
 
 #### ClairS-TO Caller
-```
+```bash
 INPUT_BAM_DIR="/path/to/bam"
 INPUT_REF_DIR="/path/to/reference"
 OUTPUT_DIR="/path/to/output"
@@ -119,7 +156,7 @@ hkubal/clairs-to:v0.3.0 \
 --output_dir ${OUTPUT_DIR}
 ```
 #### DeepSomatic Caller
-```
+```bash
 INPUT_BAM_DIR="/path/to/bam"
 INPUT_REF_DIR="/path/to/reference"
 OUTPUT_DIR="/path/to/output"
@@ -146,9 +183,9 @@ run_deepsomatic \
 --use_default_pon_filtering=true
 ```
 
-### Downloads panels of normals (PoNs) file
+### Panels of normals (PoNs) file
 source: [ClairS-TO](https://github.com/HKU-BAL/ClairS-TO?tab=readme-ov-file#tagging-non-somatic-variant-using-panels-of-normals-pons)
-```
+```bash
 PATH="PoN"
 mkdir $PATH
 wget -P $PATH http://www.bio8.cs.hku.hk/clairs-to/databases/gnomad.r2.1.af-ge-0.001.sites.vcf.gz

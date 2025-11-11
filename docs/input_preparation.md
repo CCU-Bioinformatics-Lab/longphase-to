@@ -9,12 +9,12 @@
 - [Carry methylation tags to BAMs](./docs/input_preparation.md#carry-methylation-tags-to-bams)
 ### Generate reference index
 Index the reference genome with [samtools](https://github.com/samtools/samtools).
-```
+```bash
 samtools faidx reference.fasta
 ```
 ### Generate alignment and index files
 Produce read-to-reference alignment via [minimap2](https://github.com/lh3/minimap2) and sort/index the bam by [samtools](https://github.com/samtools/samtools).
-```
+```bash
 # generate alignment flie with minimap2 according to the sequencing platform e.g. map-pb/map-ont/map-hifi
 # Note that the MD-tag is required by sniffles (–MD).
 minimap2 --MD -ax map-ont -t 10 reference.fasta reads.fastq -o alignment.sam
@@ -27,7 +27,7 @@ samtools index -@ 10 alignment.bam
 ```
 ### Generate single nucleotide polymorphism (SNP) file
 #### ClairS-TO Caller
-```
+```bash
 INPUT_BAM_DIR="/path/to/bam"
 INPUT_REF_DIR="/path/to/reference"
 OUTPUT_DIR="/path/to/output"
@@ -55,7 +55,7 @@ hkubal/clairs-to:v0.3.0 \
 ```
 
 #### DeepSomatic Caller
-```
+```bash
 INPUT_BAM_DIR="/path/to/bam"
 INPUT_REF_DIR="/path/to/reference"
 OUTPUT_DIR="/path/to/output"
@@ -83,7 +83,7 @@ run_deepsomatic \
 ```
 
 If you're using GPUs.
-```
+```bash
 INPUT_BAM_DIR="/path/to/bam"
 INPUT_REF_DIR="/path/to/reference"
 OUTPUT_DIR="/path/to/output"
@@ -112,7 +112,7 @@ run_deepsomatic \
 
 ### Generate panels of normals (PoNs) file
 source: [ClairS-TO](https://github.com/HKU-BAL/ClairS-TO?tab=readme-ov-file#tagging-non-somatic-variant-using-panels-of-normals-pons)
-```
+```bash
 PATH="PoN"
 mkdir $PATH
 wget -P $PATH http://www.bio8.cs.hku.hk/clairs-to/databases/gnomad.r2.1.af-ge-0.001.sites.vcf.gz
@@ -129,7 +129,7 @@ wget -P $PATH http://www.bio8.cs.hku.hk/clairs-to/databases/CoLoRSdb.GRCh38.v1.1
 
 ### Generate Structural variation (SV) file
 e.g. [sniffles](https://github.com/fritzsedlazeck/Sniffles) or [CuteSV](https://github.com/tjiangHIT/cuteSV).
-```
+```bash
 # In sniffles1 please specofic --num_reads_report -1. For sniffles2 please specify --output-rnames instead.
 sniffles -t 10 --num_reads_report -1 -m alignment.bam -v SV.vcf # for sniffles1
 sniffles --threads 10 --output-rnames --input alignment.bam --vcf SV.vcf # for sniffles2
@@ -148,11 +148,11 @@ cuteSV alignment.bam reference.fasta SV.vcf work_dir --report_readid --genotype
 
 #### Carry methylation tags to BAMs
 [The `-T` parameter](https://github.com/nanoporetech/dorado/issues/145) in samtools fastq extracts tags from the BAM file and stores them in the header of the FASTQ file. Please ensure that the BAM file includes both `MM` and `ML` tags and carried on in the following way.
-```
+```bash
 samtools fastq -T '*' methylcall.raw.bam > methylcall.raw.fastq
 ```
 
 Then, specify the `-y` option in minimap2 which appends tags stored in the FASTQ header into the BAM file.
-```
+```bash
 minimap2 -ax map-ont -y reference.fasta methylcall.raw.fastq 
 ```
