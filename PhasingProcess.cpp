@@ -150,7 +150,7 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         VairiantGraph *vGraph = new VairiantGraph(chr_reference, params, (*chrIter));
         chrInfo.vGraph = vGraph;
         // trans read-snp info to edge info
-        vGraph->addEdge(readVariantVec);
+        vGraph->addEdge(readVariantVec, chrInfo.LOHSegments);
         if(!params.disableCalling){
             // run somatic calling algorithm
             vGraph->somaticCalling(snpFile.getVariants((*chrIter)));

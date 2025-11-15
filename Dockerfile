@@ -1,7 +1,6 @@
 # ========= Build stage =========
 FROM ubuntu:20.04 AS build
 ARG DEBIAN_FRONTEND=noninteractive
-ARG VERSION=v1.0.0
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       git g++ gcc autoconf automake libtool make \
@@ -22,6 +21,7 @@ RUN autoreconf -i && \
 # ========= Runtime stage =========
 FROM ubuntu:20.04 AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
+ARG VERSION=v1.0.0
 # install runtime dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
