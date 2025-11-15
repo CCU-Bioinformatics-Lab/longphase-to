@@ -230,12 +230,14 @@ class VairiantGraph{
         
         std::pair<float,float> Onelongcase( std::vector<VoteResult> vote ) ;
 
+        bool checkLOHRegion(std::vector<LOHSegment>::iterator &lohIter, int pos, const std::vector<LOHSegment> &LOHSegments);
+
     public:
     
         VairiantGraph(std::string &ref, PhasingParameters &params, std::string &chr);
         ~VairiantGraph();
     
-        void addEdge(std::vector<ReadVariant> *in_readVariant);
+        void addEdge(std::vector<ReadVariant> *in_readVariant, std::vector<LOHSegment> &LOHSegments);
         
         void phasingProcess(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments, std::map<double, int> *ploidyRatioMap);
 

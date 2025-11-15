@@ -410,7 +410,6 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
     int currPos = -1;
     int nextPos = -1;
     int lastConnectPos = -1;
-    auto prevIter = variantPosType->end();
 
     auto lohIter = LOHSegments.begin();
     bool inLOHRegion = false;
@@ -418,7 +417,7 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
     int prevPhasedNode = -1;
     int lohStart = -1;
     int lohEnd = -1;
-    Haplotype connectHP = HAPLOTYPE1;
+    Haplotype connectHP = HAPLOTYPE2;
 
     // Visit all position and assign SNPs to haplotype.
     // Avoid recording duplicate information,
@@ -453,29 +452,76 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
             genomicEventChange = true;
         }
         if(genomicEventChange && variantIter->second.homozygous == inLOHRegion){
-            std::map<int,VariantEdge*>::iterator edgeIter = edgeList->find(prevPhasedNode);
-            if(edgeIter!=edgeList->end()){
-                float ra = edgeIter->second->ref->getAltReadCount(currPos);
-                float ar = edgeIter->second->alt->getRefReadCount(currPos);
-                float aa = edgeIter->second->alt->getAltReadCount(currPos);
-                float connectRef = inLOHRegion ? ra : ar;
-                float connectAlt = aa;
-                if(connectRef + connectAlt > 0 && std::max(connectRef, connectAlt) / (connectRef + connectAlt) >= 0.8){
-                    bool isRefDominant = (connectRef > connectAlt);
-                    if (inLOHRegion) {
-                        lohIter->startAllele = isRefDominant ? REF_ALLELE : ALT_ALLELE;
-                        if (isRefDominant) {
-                            connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE1) ? HAPLOTYPE2 : HAPLOTYPE1;
-                        } else {
-                            connectHP = ((*posPhasingResult)[prevPhasedNode].refHaplotype == HAPLOTYPE2) ? HAPLOTYPE2 : HAPLOTYPE1;
+            float haplotype1 = 0;
+            float haplotype2 = 0;
+            auto extendIter = variantIter;
+            while(extendIter != variantPosType->begin() && extendIter->first > prevPhasedNode){
+                extendIter--;
+            }
+            for(int j = 0 ; j < params->connectAdjacent && extendIter != variantPosType->begin(); ){
+                if (extendIter->second.homozygous != inLOHRegion) {
+                    j++;
+                    std::map<int,VariantEdge*>::iterator edgeIter = edgeList->find(extendIter->first);
+                    if(edgeIter!=edgeList->end()){
+                        float ra = edgeIter->second->ref->getAltReadCount(currPos);
+                        float ar = edgeIter->second->alt->getRefReadCount(currPos);
+                        float aa = edgeIter->second->alt->getAltReadCount(currPos);
+                        float connectRef = inLOHRegion ? ra : ar;
+                        float connectAlt = aa;
+                        bool connect = false;
+                        if(connectRef + connectAlt > 0 && std::max(connectRef, connectAlt) / (connectRef + connectAlt) >= 0.8){
+                            bool isRefDominant = (connectRef > connectAlt);
+                            if(inLOHRegion) {
+                                auto posPhasingResultIter = posPhasingResult->find(extendIter->first);
+                                if(posPhasingResultIter != posPhasingResult->end()) {
+                                    if(isRefDominant) {
+                                        connectHP = posPhasingResultIter->second.refHaplotype == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1;
+                                    }else{
+                                        connectHP = posPhasingResultIter->second.refHaplotype == HAPLOTYPE2 ? HAPLOTYPE2 : HAPLOTYPE1;
+                                    }
+                                    connect = true;
+                                }
+                            }else{
+                                if((lohIter-1) != LOHSegments.begin() && (lohIter-1)->startHapPos != -1){
+                                    connectHP = isRefDominant ? (connectHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) : connectHP;
+                                }else{
+                                    connectHP = isRefDominant ? HAPLOTYPE2 : HAPLOTYPE1;
+                                }
+                                connect = true;
+                            }
                         }
-                    } else {
-                        (lohIter - 1)->endAllele = isRefDominant ? REF_ALLELE : ALT_ALLELE;
-                        currHP = isRefDominant ? (connectHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) : connectHP;
+                        if(connect){
+                            if(connectHP == HAPLOTYPE1){
+                                haplotype1++;
+                            }else{
+                                haplotype2++;
+                            }
+                        }
                     }
-                    hpCountMap2->clear();
-                    hpCountMap3->clear();
-                    lastConnectPos = currPos;
+                    if(!inLOHRegion){
+                        break;
+                    }
+                }
+                extendIter--;
+            }
+            if(haplotype1 != haplotype2){
+                if (inLOHRegion){
+                    connectHP = haplotype1 > haplotype2 ? HAPLOTYPE1 : HAPLOTYPE2;
+                    PhasingResult phasingResult(connectHP, blockStart, variantIter->second.type, variantIter->second.origin == SOMATIC);
+                    posPhasingResult->emplace(currPos, phasingResult);
+                    lohIter->startHapPos = currPos;
+                }else{
+                    currHP = connectHP;
+                    (lohIter - 1)->endHaplotype = connectHP;
+                }
+                hpCountMap2->clear();
+                hpCountMap3->clear();
+                lastConnectPos = currPos;
+            }else{
+                if(inLOHRegion){
+                    connectHP = HAPLOTYPE2;
+                }else{
+                    currHP = HAPLOTYPE1;
                 }
             }
             genomicEventChange = false;
@@ -588,7 +634,6 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
                 break;
             }
         }
-        prevIter = variantIter;
     }
 
     // delete hpCountMap;
@@ -633,7 +678,7 @@ void VairiantGraph::destroy(){
     delete readHpMap;
 }
     
-void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
+void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vector<LOHSegment> &LOHSegments){
     readVariant = in_readVariant;
     std::map<std::string,ReadVariant> mergeReadMap;
 
@@ -822,15 +867,29 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
             }
             (*edgeList)[(*variant1Iter).position]->coverage++;
             auto node = (*edgeList)[(*variant1Iter).position];
-            int addHomCount = 0;
-            // add edge process
-            for(int nextNode = 0 ; nextNode < params->connectAdjacent;){
-                if(variant1Iter->homozygous == true || variant2Iter->homozygous == true){
+
+            auto lohIter = LOHSegments.begin();
+            bool variant1InLOH = checkLOHRegion(lohIter, variant1Iter->position, LOHSegments);
+            bool stopTransition = false;
+            bool stateTransition = false;
+            int addHetCount = 0, addHomCount = 0;
+            for(; addHetCount < params->connectAdjacent;){
+                bool variant2InLOH = checkLOHRegion(lohIter, variant2Iter->position, LOHSegments);
+                if(variant1InLOH != variant2InLOH){
+                    stateTransition = true;
+                }
+                if(stateTransition && !stopTransition && variant1InLOH == variant2InLOH){
+                    stopTransition = true;
+                    addHomCount = params->connectAdjacent+1;
+                }
+                bool addHom = variant1Iter->homozygous != variant2Iter->homozygous && stateTransition && !stopTransition && addHomCount <= 1;
+                bool addHet = variant1Iter->homozygous == false && variant2Iter->homozygous == false;
+                if(addHom){
                     addHomCount++;
                 }
-                if(variant1Iter->homozygous == false || variant2Iter->homozygous == false){
-                    nextNode++;
-                    for(int nextNextNode = 0 ; nextNextNode < params->somaticConnectAdjacent && nextNode < params->somaticConnectAdjacent;){
+                if(addHet){
+                    addHetCount++;
+                    for(int nextNextNode = 0 ; nextNextNode < params->somaticConnectAdjacent && addHetCount < params->somaticConnectAdjacent;){
                         if( variant3Iter == readIter->second.variantVec.end() ){
                             break;
                         }
@@ -841,7 +900,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
                         variant3Iter++;
                     }
                 }
-                if((addHomCount <= 6 && variant1Iter->homozygous!= variant2Iter->homozygous) || (variant1Iter->homozygous == false && variant2Iter->homozygous == false)){
+                if(addHom || addHet){
                     // this allele support ref
                     if( variant1Iter->allele == 0 )
                         node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
@@ -877,6 +936,15 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant){
             (*edgeList)[(*variant1Iter).position]->coverage++;
         }
     }
+}
+
+bool VairiantGraph::checkLOHRegion(std::vector<LOHSegment>::iterator &lohIter, int pos, const std::vector<LOHSegment> &LOHSegments){
+    // Advance iterator if current position is beyond the current LOH segment's end
+    while (lohIter != LOHSegments.end() && pos > lohIter->end) {
+        lohIter++;
+    }
+    // Check if pos is within the current LOH segment
+    return (lohIter != LOHSegments.end() && pos >= lohIter->start && pos <= lohIter->end);
 }
 
 void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
@@ -1174,9 +1242,8 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
     bool genomicEventChange = false;
     int lastPhaseSet = -1;
     int assignPhaseSet = -1;
-    Haplotype lastHP = HAPLOTYPE_UNDEFINED;
     Haplotype connectedHP = HAPLOTYPE_UNDEFINED;
-    Allele nextConnectedAllele = Allele_UNDEFINED;
+    Haplotype nextConnectedHP = HAPLOTYPE_UNDEFINED;
     auto lohIter = LOHSegments.begin();
     bool inLOHRegion = false;
     for(auto variantIter = variantPosType->begin() ; variantIter != variantPosType->end() ; variantIter++ ){
@@ -1192,16 +1259,19 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
         }
         if(genomicEventChange && inLOHRegion){
             genomicEventChange = false;
-            Allele connectedAllele = lohIter->startAllele;
-            if(connectedAllele != Allele_UNDEFINED){
-                connectedHP = (connectedAllele == REF_ALLELE) ? 
-                            (lastHP == HAPLOTYPE1 ? HAPLOTYPE2 : HAPLOTYPE1) :
-                            lastHP;
-                // lastPhaseSet = lastPhaseSet;
+            if(lohIter->startHapPos != -1){
+                auto posPhasingResultIter = posPhasingResult.find(lohIter->startHapPos);
+                if(posPhasingResultIter != posPhasingResult.end()){
+                    connectedHP = posPhasingResultIter->second.refHaplotype;
+                }else{
+                    connectedHP = HAPLOTYPE2;
+                    lastPhaseSet = variantIter->first;
+                }
             }else{
+                connectedHP = HAPLOTYPE2;
                 lastPhaseSet = variantIter->first;
             }
-            nextConnectedAllele = lohIter->endAllele;
+            nextConnectedHP = lohIter->endHaplotype;
         }
         if(variantIter->second.homozygous){
             if(inLOHRegion){
@@ -1245,9 +1315,9 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
                 }else{
                     if(genomicEventChange){
                         genomicEventChange = false;
-                        if(nextConnectedAllele != Allele_UNDEFINED){
+                        if(nextConnectedHP != HAPLOTYPE_UNDEFINED){
                             assignPhaseSet = result.phaseSet.front();
-                            nextConnectedAllele = Allele_UNDEFINED;
+                            nextConnectedHP = HAPLOTYPE_UNDEFINED;
                         }
                     }
                     if(result.somatic){
@@ -1272,7 +1342,6 @@ void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std:
                     if(assignPhaseSet == result.phaseSet.front()){
                         result.phaseSet.front() = lastPhaseSet;
                     }
-                    lastHP = result.refHaplotype;
                     lastPhaseSet = result.phaseSet.front();
                 }
             }
