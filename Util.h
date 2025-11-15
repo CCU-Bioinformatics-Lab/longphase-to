@@ -95,11 +95,11 @@ typedef std::map<int, std::array<int, 2>> ClipCount;
 struct LOHSegment{
     int start;
     int end;
-    Allele startAllele;
-    Allele endAllele;
+    int startHapPos;
+    Haplotype endHaplotype;
     double ratio;
     LOHSegment(int inStart, int inEnd, double inRatio):
-        start(inStart), end(inEnd), startAllele(Allele_UNDEFINED), endAllele(Allele_UNDEFINED), ratio(inRatio){}
+        start(inStart), end(inEnd), startHapPos(-1), endHaplotype(HAPLOTYPE_UNDEFINED), ratio(inRatio){}
 };
 class VairiantGraph;
 struct ChrInfo{
