@@ -201,7 +201,7 @@ wget -P $PATH http://www.bio8.cs.hku.hk/clairs-to/databases/CoLoRSdb.GRCh38.v1.1
 ```
 
 ## Citation
-Jyun-Hong Lin, Liang-Chi Chen, Shu-Qi Yu and Yao-Ting Huang, [LongPhase: an ultra-fast chromosome-scale phasing algorithm for small and large variants](https://academic.oup.com/bioinformatics/advance-article-abstract/doi/10.1093/bioinformatics/btac058/6519151), Bioinformatics, 2022.
+Ming-En Ho, Zhenxian Zheng, Ruibang Luo, Huai-Hsiang Chiang, Yao-Ting Huang, [LongPhase-S: purity estimation and variant recalibration with somatic haplotying for long-read sequencing](https://www.biorxiv.org/content/10.1101/2025.11.20.689492v1), BioXive, 2025.
 
 ## Contact
 Yao-Ting Huang, ythuang at cs.ccu.edu.tw
