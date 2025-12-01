@@ -156,7 +156,7 @@ struct VariantEdge{
     
     VariantEdge(int currPos);
     // node pair 
-    std::pair<PosAllele,PosAllele> findBestEdgePair(std::map<int, VariantInfo>::iterator currNodeIter, std::map<int, VariantInfo>::iterator nextNodeIter, bool isONT, double diffRatioThreshold, VoteResult &vote, bool debug);
+    std::pair<PosAllele,PosAllele> findBestEdgePair(std::map<int, VariantInfo>::iterator currNodeIter, std::map<int, VariantInfo>::iterator nextNodeIter, double diffRatioThreshold, VoteResult &vote, bool debug);
     // number of read of two node. AA and AB combination
     std::pair<float,float> findNumberOfRead(int targetPos);
     // find the edge weight of two node

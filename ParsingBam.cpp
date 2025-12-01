@@ -984,92 +984,6 @@ bool SnpParser::findSNP(std::string chr, int position){
     return true;
 }
 
-void SnpParser::filterSNP(std::string chr, std::vector<ReadVariant> &readVariantVec, std::string &chr_reference){
-    
-    // pos, <allele, <strand, True>
-    std::map<int, std::map<int, std::map<int, bool> > > posAlleleStrand;
-    std::map< int, bool > methylation;
-    
-    /*
-    // iter all variant, record the strand contained in each SNP
-    for( auto readSNPVecIter : readVariantVec ){
-        // tag allele on forward or reverse strand
-        for(auto variantIter : readSNPVecIter.variantVec ){
-            posAlleleStrand[variantIter.position][variantIter.allele][readSNPVecIter.is_reverse] = true;
-        }
-    }
-    
-    // iter all SNP, both alleles that require SNP need to appear in the two strand
-    for(auto pos: posAlleleStrand){
-        // this position contain two allele, REF allele appear in the two strand, ALT allele appear in the two strand
-        if(pos.second.size() == 2 && pos.second[0].size() == 2 && pos.second[1].size() == 2 ){
-            // high confident SNP
-        }
-        else{
-            //methylation[pos.first] = true;
-        }
-    }
-    */
-
-    // Filter SNPs that are not easy to phasing due to homopolymer
-    // get variant list
-    std::map<std::string, std::map<int, RefAlt> >::iterator chrIter =  chrVariant->find(chr);
-    std::map< int, bool > errorProneSNP;
-    
-    if( chrIter != chrVariant->end() ){
-        std::map<int, int> consecutiveAllele;
-        // iter all SNP and tag homopolymer
-        for(std::map<int, RefAlt>::iterator posIter = (*chrIter).second.begin(); posIter != (*chrIter).second.end(); posIter++ ){
-            consecutiveAllele[(*posIter).first] = homopolymerLength((*posIter).first, chr_reference);
-        }
-        std::map<int, RefAlt>::iterator currSNPIter = (*chrIter).second.begin();
-        //skip homozygous SNP
-        while( currSNPIter != (*chrIter).second.end() && currSNPIter->second.homozygous == true ){
-            currSNPIter++;
-        }
-        std::map<int, RefAlt>::iterator nextSNPIter = std::next(currSNPIter,1);
-        // check whether each SNP pair falls in an area that is not easy to phasing
-        while( currSNPIter != (*chrIter).second.end() && nextSNPIter != (*chrIter).second.end() ){
-            //skip homozygous SNP
-            if (nextSNPIter->second.homozygous == true){
-                nextSNPIter++;
-                continue;
-            }
-            int currPos = (*currSNPIter).first;
-            int nextPos = (*nextSNPIter).first;
-            // filter one of SNP if this SNP pair falls in homopolymer and distance<=2
-            if( consecutiveAllele[currPos] >= 3 && consecutiveAllele[nextPos] >= 3 && std::abs(currPos-nextPos)<=2 ){
-                errorProneSNP[nextPos]=true;
-                nextSNPIter = (*chrIter).second.erase(nextSNPIter);
-                continue;
-            }
-            
-            currSNPIter = nextSNPIter;
-            nextSNPIter++;
-        }
-        
-    }
-    
-    // iter all reads
-    for( std::vector<ReadVariant>::iterator readSNPVecIter = readVariantVec.begin() ; readSNPVecIter != readVariantVec.end() ; readSNPVecIter++ ){
-        // iter all SNPs in this read
-        for(std::vector<Variant>::iterator variantIter = (*readSNPVecIter).variantVec.begin() ; variantIter != (*readSNPVecIter).variantVec.end() ; ){
-            std::map< int, bool >::iterator delSNPIter = methylation.find((*variantIter).position);
-            std::map< int, bool >::iterator homoIter = errorProneSNP.find((*variantIter).position);
-            
-            if( delSNPIter != methylation.end() ){
-                variantIter = (*readSNPVecIter).variantVec.erase(variantIter);
-            }
-            else if( homoIter != errorProneSNP.end() ){
-                variantIter = (*readSNPVecIter).variantVec.erase(variantIter);
-            }
-            else{
-                variantIter++;
-            }
-        }
-    }
-}
-
 // SV
 SVParser::SVParser(PhasingParameters &in_params, SnpParser &in_snpFile){
     params = &in_params;
@@ -1301,7 +1215,7 @@ void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool,
                 continue;
             }
 
-            get_snp(*bamHdr,*aln,readVariantVec, clipCount, ref_string, params.isONT, params.mismatchRate);
+            get_snp(*bamHdr,*aln,readVariantVec, clipCount, ref_string, params.mismatchRate);
         }
         hts_idx_destroy(idx);
         bam_hdr_destroy(bamHdr);
@@ -1398,7 +1312,7 @@ std::vector<std::pair<int, char>> getWindowsDiffRef(const uint32_t *cigar, int c
     return offsetBase;
 }
 
-void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, bool isONT, double mismatchRate){
+void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, double mismatchRate){
 
     ReadVariant *tmpReadResult = new ReadVariant();
     (*tmpReadResult).read_name = bam_get_qname(&aln);

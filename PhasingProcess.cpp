@@ -27,7 +27,6 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     
     std::cerr<< "\n";
     std::cerr<< "--- Phasing Parameter --- \n";
-    std::cerr<< "Seq Platform       : " << ( params.isONT ? "ONT" : "PB" ) << "\n";
     std::cerr<< "Caller             : " << params.callerStr << "\n";
     std::cerr<< "Phase Indel        : " << ( params.phaseIndel ? "True" : "False" )  << "\n";
     std::cerr<< "Distance Threshold : " << params.distance        << "\n";
@@ -125,11 +124,6 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
         bamParser->direct_detect_alleles(lastSNPpos, threadPool, params, *readVariantVec, chrInfo.clipCount, chr_reference);
         // free memory
         delete bamParser;
-        
-        // filter variants prone to switch errors in ONT sequencing.
-        if(params.isONT){
-            snpFile.filterSNP((*chrIter), *readVariantVec, chr_reference);
-        }
 
         // bam files are partial file or no read support this chromosome's SNP
         if( readVariantVec->size() == 0 ){

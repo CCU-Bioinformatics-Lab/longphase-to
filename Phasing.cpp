@@ -13,8 +13,6 @@ static const char *CORRECT_USAGE_MESSAGE =
 "   -s, --snp-file=NAME                    input SNP vcf file, or a VCF file with both SNPs and indels.\n"
 "   -b, --bam-file=NAME                    input bam file.\n"
 "   -r, --reference=NAME                   reference fasta.\n"
-"   --ont, --pb                            ont: Oxford Nanopore genomic reads.\n"
-"                                          pb: PacBio HiFi/CCS genomic reads.\n"
 "   -c, --caller=NAME                      variant caller name.\n"
 "                                          options: clairs_to_ss, clairs_to_ssrs, deepsomatic_to\n\n"
 
@@ -115,8 +113,6 @@ namespace opt
     static std::string callerStr="";
     static Caller caller = CALLER_UNDEFINED;
     static bool generateDot=false;
-    static bool isONT=false;
-    static bool isPB=false;
     static bool phaseIndel=false;
     static bool disablePonTag=false;
     static bool disableCalling=false;
@@ -181,8 +177,6 @@ void PhasingOptions(int argc, char** argv)
         case MOD_FILE: arg >> opt::modFile; break; 
         case PHASE_INDEL: opt::phaseIndel=true; break; 
         case DOT_FILE: opt::generateDot=true; break;
-        case IS_ONT: opt::isONT=true; break;
-        case IS_PB: opt::isPB=true; break;
         case PON_FILE: arg >> opt::ponFile; break;
         case STRICT_PON_FILE: arg >> opt::strictPonFile; break;
         case SOMATIC_CONNECT_ADJACENT: arg >> opt::somaticConnectAdjacent; break;
@@ -211,16 +205,6 @@ void PhasingOptions(int argc, char** argv)
         die = true;
     }
     
-    if( opt::isONT == false && opt::isPB == false ){
-        std::cerr << SUBPROGRAM ": missing arguments. --ont or --pb\n";
-        die = true;
-    }
-    
-    if( opt::isONT == true && opt::isPB == true ){
-        std::cerr << SUBPROGRAM ": conflict arguments. --ont or --pb\n";
-        die = true;
-    }
-
     if( opt::snpFile != "")
     {
         std::ifstream openFile( opt::snpFile.c_str() );
@@ -388,8 +372,6 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     ecParams.fastaFile=opt::fastaFile;
     ecParams.resultPrefix=opt::resultPrefix;
     ecParams.generateDot=opt::generateDot;
-    ecParams.isONT=opt::isONT;
-    ecParams.isPB=opt::isPB;
     ecParams.phaseIndel=opt::phaseIndel;
     ecParams.caller=opt::caller;
     ecParams.callerStr=opt::callerStr;

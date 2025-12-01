@@ -182,8 +182,6 @@ class SnpParser : public BaseVairantParser{
 
         bool findSNP(std::string chr, int posistion);
         
-        void filterSNP(std::string chr, std::vector<ReadVariant> &readVariantVec, std::string &chr_reference);
-
         bool checkType(const VariantType type) const override;
 
     protected:
@@ -275,7 +273,7 @@ class BamParser{
         // mod map and iter
         std::map<int, std::map<std::string ,RefAlt> > *currentMod;
         std::map<int, std::map<std::string ,RefAlt> >::iterator firstModIter;
-        void get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, bool isONT, double mismatchRate);
+        void get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, double mismatchRate);
         void getClip(int pos, int clipFrontBack, int len, ClipCount &clipCount);
    
     public:
