@@ -5,8 +5,8 @@
     - [ClairS-TO Caller](#clairs-to-caller)
     - [DeepSomatic Caller](#deepsomatic-caller)
 - [Downloads panels of normals (PoNs) file](#downloads-panels-of-normals-pons-file)
-- [Generate Structural variation (SV) file](./docs/input_preparation.md#generate-structural-variation-sv-file)
-- [Carry methylation tags to BAMs](./docs/input_preparation.md#carry-methylation-tags-to-bams)
+<!-- - [Generate Structural variation (SV) file](./docs/input_preparation.md#generate-structural-variation-sv-file) -->
+<!-- - [Carry methylation tags to BAMs](./docs/input_preparation.md#carry-methylation-tags-to-bams) -->
 ### Generate reference index
 Index the reference genome with [samtools](https://github.com/samtools/samtools).
 ```bash
@@ -127,7 +127,7 @@ wget -P $PATH http://www.bio8.cs.hku.hk/clairs-to/databases/CoLoRSdb.GRCh38.v1.1
 #                   PoN/gnomad.r2.1.af-ge-0.001.sites.vcf.gz
 ```
 
-### Generate Structural variation (SV) file
+<!-- ### Generate Structural variation (SV) file
 e.g. [sniffles](https://github.com/fritzsedlazeck/Sniffles) or [CuteSV](https://github.com/tjiangHIT/cuteSV).
 ```bash
 # In sniffles1 please specofic --num_reads_report -1. For sniffles2 please specify --output-rnames instead.
@@ -144,9 +144,9 @@ cuteSV alignment.bam reference.fasta SV.vcf work_dir --report_readid --genotype
 --max_cluster_bias_INS 1000 --diff_ratio_merging_INS 0.9 --max_cluster_bias_DEL 1000 --diff_ratio_merging_DEL 0.5
 # ONT data: 
 --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3
-```
+``` -->
 
-#### Carry methylation tags to BAMs
+<!-- #### Carry methylation tags to BAMs
 [The `-T` parameter](https://github.com/nanoporetech/dorado/issues/145) in samtools fastq extracts tags from the BAM file and stores them in the header of the FASTQ file. Please ensure that the BAM file includes both `MM` and `ML` tags and carried on in the following way.
 ```bash
 samtools fastq -T '*' methylcall.raw.bam > methylcall.raw.fastq
@@ -155,4 +155,4 @@ samtools fastq -T '*' methylcall.raw.bam > methylcall.raw.fastq
 Then, specify the `-y` option in minimap2 which appends tags stored in the FASTQ header into the BAM file.
 ```bash
 minimap2 -ax map-ont -y reference.fasta methylcall.raw.fastq 
-```
+``` -->

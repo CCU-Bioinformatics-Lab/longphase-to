@@ -19,8 +19,6 @@ struct PhasingParameters
     std::string callerStr;
     Caller caller;
     bool generateDot;
-    bool isONT;
-    bool isPB;
     bool phaseIndel;
     bool disablePonTag=true;
     bool disableCalling=false;

@@ -177,7 +177,7 @@ bool VariantEdge::get_fakeSnp(){
 }  
 
 //VariantEdge
-std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, VariantInfo>::iterator currNodeIter, std::map<int, VariantInfo>::iterator nextNodeIter, bool isONT, double edgeThreshold, VoteResult &vote, bool debug){
+std::pair<PosAllele,PosAllele> VariantEdge::findBestEdgePair(std::map<int, VariantInfo>::iterator currNodeIter, std::map<int, VariantInfo>::iterator nextNodeIter, double edgeThreshold, VoteResult &vote, bool debug){
     int targetPos = nextNodeIter->first;
     std::pair<float,float> refBestPair  = ref->BestPair(targetPos);
     std::pair<float,float> altBestPair  = alt->BestPair(targetPos);
@@ -580,7 +580,7 @@ void VairiantGraph::edgeConnectResult(std::vector<LOHSegment> &LOHSegments){
                 VoteResult vote(currPos, 1); //used to store previous 20 variants' voting information
 
                 // consider reads from the currnt SNP and the next (i+1)'s SNP
-                std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(variantIter, nextNodeIter, params->isONT, params->edgeThreshold, vote, false);
+                std::pair<PosAllele,PosAllele> tmp = edgeIter->second->findBestEdgePair(variantIter, nextNodeIter, params->edgeThreshold, vote, false);
                 
                 // if the target is a danger indel change its weight to 0.1
                 if ( (*variantPosType)[currPos].type == DANGER_INDEL ) {
