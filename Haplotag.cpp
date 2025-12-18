@@ -15,8 +15,8 @@ static const char *CORRECT_USAGE_MESSAGE =
 "      -r, --reference=NAME            reference fasta.\n"
 "optional arguments:\n"
 "      --tagSupplementary              tag supplementary alignment. default:false\n"
-"      --sv-file=NAME                  input phased SV vcf file.\n"
-"      --mod-file=NAME                 input a modified VCF file (produced by longphase modcall and processed by longphase phase).\n"
+// "      --sv-file=NAME                  input phased SV vcf file.\n"
+// "      --mod-file=NAME                 input a modified VCF file (produced by longphase modcall and processed by longphase phase).\n"
 "      -q, --qualityThreshold=Num      not tag alignment if the mapping quality less than threshold. default:1\n"
 "      -p, --percentageThreshold=Num   the alignment will be tagged according to the haplotype corresponding to most alleles.\n"
 "                                      if the alignment has no obvious corresponding haplotype, it will not be tagged. default:0.6\n"
@@ -221,3 +221,4 @@ int HaplotagMain(int argc, char** argv, std::string in_version)
 
     return 0;
 }
+
