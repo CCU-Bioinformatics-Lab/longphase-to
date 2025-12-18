@@ -54,7 +54,7 @@ LongPhase-TO Overview:
     - [ClairS-TO Caller](#clairs-to-caller)
     - [DeepSomatic Caller](#deepsomatic-caller)
   - [Panels of normals (PoNs) file](#panels-of-normals-pons-file)
-- [Citation](#citation)
+<!-- - [Citation](#citation)-->
 - [Contact](#contact)
 
 ## Installation
@@ -65,7 +65,7 @@ wget https://github.com/CCU-Bioinformatics-Lab/longphase-to/releases/download/v1
 tar -xJf longphase-to-linux-x64.tar.xz
 ```
 
-An executable file, longphase_linux-x64, can be executed directly. If you need to compile a local version, you can clone and compile using the following commands, and make sure that the environment has zlib installed.
+An executable file, longphase-to_linux-x64, can be executed directly. If you need to compile a local version, you can clone and compile using the following commands, and make sure that the environment has zlib installed.
 
 ```bash
 git clone https://github.com/CCU-Bioinformatics-Lab/longphase-to.git
@@ -217,8 +217,8 @@ wget -P $PATH http://www.bio8.cs.hku.hk/clairs-to/databases/CoLoRSdb.GRCh38.v1.1
 #                   PoN/gnomad.r2.1.af-ge-0.001.sites.vcf.gz
 ```
 
-## Citation
-Ming-En Ho, Zhenxian Zheng, Ruibang Luo, Huai-Hsiang Chiang, Yao-Ting Huang, [LongPhase-S: purity estimation and variant recalibration with somatic haplotying for long-read sequencing](https://www.biorxiv.org/content/10.1101/2025.11.20.689492v1), BioXive, 2025.
+<!--## Citation
+Ming-En Ho, Zhenxian Zheng, Ruibang Luo, Huai-Hsiang Chiang, Yao-Ting Huang, [LongPhase-S: purity estimation and variant recalibration with somatic haplotying for long-read sequencing](https://www.biorxiv.org/content/10.1101/2025.11.20.689492v1), BioXive, 2025.-->
 
 ## Contact
 Yao-Ting Huang, ythuang at cs.ccu.edu.tw
