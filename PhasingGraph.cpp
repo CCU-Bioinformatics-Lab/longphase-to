@@ -1,4 +1,8 @@
 #include "PhasingGraph.h"
+#include "MethylXgbFeatureExtraction.h"
+#include "MethylXgbModel.h"
+
+#include <iomanip>
 
 //SubEdge
 
@@ -645,6 +649,7 @@ VairiantGraph::VairiantGraph(std::string &in_ref, PhasingParameters &in_params, 
     params=&in_params;
     ref=&in_ref;
     chr = in_chr;
+    readVariant = nullptr;
     
     variantPosType = new std::map<int,VariantInfo>;
     edgeList = new std::map<int,VariantEdge*>;
@@ -846,7 +851,10 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
     
     for(std::map<std::string,ReadVariant>::iterator readIter = mergeReadMap.begin() ; readIter != mergeReadMap.end() ; readIter++){
         (*readIter).second.sort();
-        
+        if((*readIter).second.variantVec.empty()){
+            continue;
+        }
+
         // iter all pair of snp and construct initial graph
         std::vector<Variant>::iterator variant1Iter = readIter->second.variantVec.begin();
         std::vector<Variant>::iterator variant2Iter = std::next(variant1Iter,1);
@@ -1085,9 +1093,10 @@ void VairiantGraph::somaticCalling(std::map<int, RefAlt>* variants){
 void VairiantGraph::tagSomatic(std::map<int, RefAlt>* variants){
     for(auto nodeIter = variantPosType->begin() ; nodeIter != variantPosType->end() ; nodeIter++ ){
         auto variantIter = variants->find(nodeIter->first);
-        if(variantIter->second.originType == SOMATIC){
-            nodeIter->second.origin = SOMATIC;
+        if(variantIter == variants->end()){
+            continue;
         }
+        nodeIter->second.origin = variantIter->second.originType;
     }
 }
 
@@ -1236,6 +1245,253 @@ void VairiantGraph::convertNonGermlineToSomatic() {
             variantIter->second.origin = SOMATIC;
         }
     }
+}
+
+namespace {
+struct MethylBinaryCounts {
+    int high = 0;
+    int low = 0;
+};
+
+struct MethylAlleleCounts {
+    int refHigh = 0;
+    int refLow = 0;
+    int altHigh = 0;
+    int altLow = 0;
+};
+
+bool isMethylXgbVariantType(VariantType type) {
+    return type == SNP || type == INDEL || type == DANGER_INDEL;
+}
+
+MethylXgbVariantKind methylXgbModelKind(VariantType type) {
+    return type == SNP ? METHYL_XGB_KIND_SNV : METHYL_XGB_KIND_INDEL;
+}
+
+size_t methylXgbModelIndex(VariantType type) {
+    return methylXgbModelKind(type) == METHYL_XGB_KIND_SNV ? 0u : 1u;
+}
+
+bool isPureRatio(double ratio) {
+    const double eps = 1e-9;
+    return std::fabs(ratio) <= eps || std::fabs(ratio - 1.0) <= eps;
+}
+}
+
+MethylXgbApplySummary VairiantGraph::refineSomaticWithMethylXgb(){
+    MethylXgbApplySummary summary;
+    if(readVariant == nullptr){
+        return summary;
+    }
+
+    const int window = params->methylXgbWindow;
+    std::array<std::map<int, MethylBinaryCounts>, 2> globalMethCounts;
+    for(const auto &read : *readVariant){
+        if(!read.methylXgbEligible || read.methylXgbVariantVec.empty() || read.methylVec.empty()){
+            continue;
+        }
+
+        size_t methylStart = 0;
+        for(const auto &observation : read.methylXgbVariantVec){
+            if(!observation.rawDetailEligible || !isMethylXgbVariantType(observation.type)){
+                continue;
+            }
+
+            const int windowStart = observation.position - window;
+            const int windowEnd = observation.position + window;
+            while(methylStart < read.methylVec.size() &&
+                  read.methylVec[methylStart].position < windowStart){
+                methylStart++;
+            }
+
+            std::map<int, MethylBinaryCounts> &kindCounts =
+                globalMethCounts[methylXgbModelIndex(observation.type)];
+            for(size_t methylIdx = methylStart; methylIdx < read.methylVec.size(); methylIdx++){
+                const MethylCall &meth = read.methylVec[methylIdx];
+                if(meth.position > windowEnd){
+                    break;
+                }
+                MethylBinaryCounts &counts = kindCounts[meth.position];
+                if(meth.state == METHYL_HIGH){
+                    counts.high++;
+                }
+                else if(meth.state == METHYL_LOW){
+                    counts.low++;
+                }
+            }
+        }
+    }
+
+    std::map<int, std::map<int, MethylAlleleCounts>> siteMethCounts;
+
+    for(const auto &read : *readVariant){
+        if(!read.methylXgbEligible || read.methylXgbVariantVec.empty() || read.methylVec.empty()){
+            continue;
+        }
+
+        size_t methylStart = 0;
+        for(const auto &observation : read.methylXgbVariantVec){
+            if(!observation.rawDetailEligible){
+                continue;
+            }
+            auto variantInfoIter = variantPosType->find(observation.position);
+            if(variantInfoIter == variantPosType->end()){
+                continue;
+            }
+            if(!isMethylXgbVariantType(variantInfoIter->second.type)){
+                continue;
+            }
+            // Methyl XGBoost only refines sites already predicted/tagged as somatic.
+            // Earlier non-somatic and PON calls are preserved.
+            if(variantInfoIter->second.origin != SOMATIC){
+                continue;
+            }
+            if(observation.allele != REF_ALLELE && observation.allele != ALT_ALLELE){
+                continue;
+            }
+
+            const int windowStart = observation.position - window;
+            const int windowEnd = observation.position + window;
+            while(methylStart < read.methylVec.size() && read.methylVec[methylStart].position < windowStart){
+                methylStart++;
+            }
+
+            for(size_t methylIdx = methylStart; methylIdx < read.methylVec.size(); methylIdx++){
+                const MethylCall &meth = read.methylVec[methylIdx];
+                if(meth.position > windowEnd){
+                    break;
+                }
+                if(meth.position == observation.position){
+                    continue;
+                }
+
+                const std::map<int, MethylBinaryCounts> &kindCounts =
+                    globalMethCounts[methylXgbModelIndex(variantInfoIter->second.type)];
+                auto globalIter = kindCounts.find(meth.position);
+                if(globalIter == kindCounts.end()){
+                    continue;
+                }
+                // Match MethylSomaticAnalysis nonbinary filtering: a methyl_pos with
+                // global methylation ratio 0 or 1 is fully concordant and excluded.
+                if(globalIter->second.high == 0 || globalIter->second.low == 0){
+                    continue;
+                }
+
+                MethylAlleleCounts &counts = siteMethCounts[observation.position][meth.position];
+                if(observation.allele == REF_ALLELE){
+                    if(meth.state == METHYL_HIGH){
+                        counts.refHigh++;
+                    }
+                    else if(meth.state == METHYL_LOW){
+                        counts.refLow++;
+                    }
+                }
+                else if(observation.allele == ALT_ALLELE){
+                    if(meth.state == METHYL_HIGH){
+                        counts.altHigh++;
+                    }
+                    else if(meth.state == METHYL_LOW){
+                        counts.altLow++;
+                    }
+                }
+            }
+        }
+    }
+
+    for(const auto &siteIter : siteMethCounts){
+        const int variantPos = siteIter.first;
+        auto variantInfoIter = variantPosType->find(variantPos);
+        if(variantInfoIter == variantPosType->end() || !isMethylXgbVariantType(variantInfoIter->second.type)){
+            continue;
+        }
+        if(variantInfoIter->second.origin != SOMATIC){
+            continue;
+        }
+
+        int nPoints = 0;
+        double sumRefRatio = 0.0;
+        double sumAltRatio = 0.0;
+        double sumRefCount = 0.0;
+        double sumAltCount = 0.0;
+        double refMixAltPureCount = 0.0;
+        double refPureAltMixCount = 0.0;
+        double bothMixCount = 0.0;
+        double sumAbsDiff = 0.0;
+        double sumAbsCountDiff = 0.0;
+
+        for(const auto &methIter : siteIter.second){
+            const MethylAlleleCounts &counts = methIter.second;
+            const int refCount = counts.refHigh + counts.refLow;
+            const int altCount = counts.altHigh + counts.altLow;
+            if(refCount == 0 || altCount == 0){
+                continue;
+            }
+
+            const double refRatio = methyl_xgb_feature_extraction::ratioAtTrainingPrecision(
+                counts.refHigh, refCount);
+            const double altRatio = methyl_xgb_feature_extraction::ratioAtTrainingPrecision(
+                counts.altHigh, altCount);
+            const bool refPure = isPureRatio(refRatio);
+            const bool altPure = isPureRatio(altRatio);
+
+            nPoints++;
+            sumRefRatio += refRatio;
+            sumAltRatio += altRatio;
+            sumRefCount += refCount;
+            sumAltCount += altCount;
+            sumAbsDiff += std::fabs(refRatio - altRatio);
+            sumAbsCountDiff += std::fabs(static_cast<double>(altCount - refCount));
+            if(!refPure && altPure){
+                refMixAltPureCount += 1.0;
+            }
+            if(refPure && !altPure){
+                refPureAltMixCount += 1.0;
+            }
+            if(!refPure && !altPure){
+                bothMixCount += 1.0;
+            }
+        }
+
+        if(nPoints == 0){
+            continue;
+        }
+
+        const double meanRefRatio = sumRefRatio / nPoints;
+        const double meanAltRatio = sumAltRatio / nPoints;
+        const double meanCenterDistToDiag = std::fabs(meanRefRatio - meanAltRatio) / std::sqrt(2.0);
+
+        MethylXgbFeatureVector features = {{
+            meanRefRatio,
+            meanAltRatio,
+            sumRefCount / nPoints,
+            sumAltCount / nPoints,
+            refMixAltPureCount / nPoints,
+            refPureAltMixCount / nPoints,
+            bothMixCount / nPoints,
+            sumAbsDiff / nPoints,
+            sumAbsCountDiff / nPoints,
+            meanCenterDistToDiag
+        }};
+        const MethylXgbVariantKind modelKind = methylXgbModelKind(variantInfoIter->second.type);
+        const double threshold = modelKind == METHYL_XGB_KIND_SNV
+            ? params->methylXgbSnvThreshold
+            : params->methylXgbIndelThreshold;
+        const MethylXgbPrediction prediction = predictMethylXgb(
+            modelKind,
+            features,
+            threshold
+        );
+        summary.applied++;
+        if(prediction.somatic){
+            variantInfoIter->second.origin = SOMATIC;
+            summary.somatic++;
+        }
+        else{
+            variantInfoIter->second.origin = GERMLINE;
+            summary.nonSomatic++;
+        }
+    }
+    return summary;
 }
 
 void VairiantGraph::exportPhasingResult(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments) {
@@ -1949,6 +2205,11 @@ double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> 
     double lohRatio = getLOHRatio(chrInfo, chrLength);
     std::map<double, int> distributionSumMap = mergeDistributionMap(inChrDistributionMap);
     int totalCount = getTotalCount(distributionSumMap);
+    if(distributionSumMap.empty() || totalCount <= 0){
+        std::cerr << "Cannot estimate tumor purity: no ploidy observations were produced. "
+                  << "Provide --purity explicitly.\n";
+        exit(EXIT_FAILURE);
+    }
     double q1 = findQuartile(distributionSumMap, 0.25 * (totalCount + 1));
     double q3 = findQuartile(distributionSumMap, 0.75 * (totalCount + 1));
     double purity = 0;
@@ -1958,6 +2219,11 @@ double PurityCalculator::getPurity(std::map<std::string, std::map<double, int>> 
         purity = -40.7226 + 0.0000*1 + 194.2179*q1 - 13.4902*q3 - 8.6631*lohRatio - 169.4964*q1*q1 - 161.1149*q1*q3 + 71.1042*q1*lohRatio + 74.7865*q3*q3 - 38.3745*q3*lohRatio + 22.1523*lohRatio*lohRatio + 6.5747*q1*q1*q1 + 145.5591*q1*q1*q3 + 25.5427*q1*q1*lohRatio - 4.7007*q1*q3*q3 - 127.0712*q1*q3*lohRatio + 19.2526*q1*lohRatio*lohRatio - 30.2605*q3*q3*q3 + 74.4106*q3*q3*lohRatio - 33.5680*q3*lohRatio*lohRatio - 4.5039*lohRatio*lohRatio*lohRatio;
     }else if (caller == CLAIRS_TO_SSRS){
         purity = -40.7226 + 0.0000*1 + 194.2179*q1 - 13.4902*q3 - 8.6631*lohRatio - 169.4964*q1*q1 - 161.1149*q1*q3 + 71.1042*q1*lohRatio + 74.7865*q3*q3 - 38.3745*q3*lohRatio + 22.1523*lohRatio*lohRatio + 6.5747*q1*q1*q1 + 145.5591*q1*q1*q3 + 25.5427*q1*q1*lohRatio - 4.7007*q1*q3*q3 - 127.0712*q1*q3*lohRatio + 19.2526*q1*lohRatio*lohRatio - 30.2605*q3*q3*q3 + 74.4106*q3*q3*lohRatio - 33.5680*q3*lohRatio*lohRatio - 4.5039*lohRatio*lohRatio*lohRatio;
+    }
+    if(!std::isfinite(purity)){
+        std::cerr << "Cannot estimate tumor purity: the estimator produced a non-finite value. "
+                  << "Provide --purity explicitly.\n";
+        exit(EXIT_FAILURE);
     }
     // Clamp the purity value between 0 and 1
     return std::max(0.0, std::min(purity, 1.0));

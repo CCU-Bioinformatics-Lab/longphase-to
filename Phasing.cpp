@@ -1,7 +1,13 @@
 #include "Phasing.h"
 #include "PhasingProcess.h"
+#include "SomaticRefinementPolicy.h"
 #include "Util.h"
+#include <cerrno>
+#include <cctype>
+#include <cmath>
+#include <cstdlib>
 #include <getopt.h>
+#include <limits>
 
 
 #define SUBPROGRAM "phase"
@@ -36,6 +42,15 @@ static const char *CORRECT_USAGE_MESSAGE =
 "                                          input format: A.vcf,B.vcf\n"
 "   --somaticConnectAdjacent=Num           connect adjacent N SNPs. default:6\n\n"
 
+"methylation XGBoost somatic refinement arguments:\n"
+"   --methyl-xgb                           enable refinement when purity <=0.7. default: True\n"
+"   --disable-methyl-xgb                   disable methylation feature XGBoost somatic refinement.\n"
+"   --methyl-xgb-snv-threshold=[0~1]       SNV somatic probability threshold. default:0.44\n"
+"   --methyl-xgb-indel-threshold=[0~1]     indel somatic probability threshold. default:0.17\n"
+"   --methyl-window=Num                    variant-centered methylation window radius. default:2000\n"
+"   --meth-high=[0~1]                      high methylation probability threshold. default:0.8\n"
+"   --meth-low=[0~1]                       low methylation probability threshold. default:0.2\n\n"
+
 "parse alignment arguments:\n"
 "   -q, --mappingQuality=Num               filter alignment if mapping quality is lower than threshold. default:1\n"
 "   -x, --mismatchRate=Num                 mark reads as false if mismatchRate of them are higher than threshold. default:3\n\n"
@@ -57,9 +72,9 @@ static const char *CORRECT_USAGE_MESSAGE =
 
 static const char* shortopts = "s:b:o:t:r:d:1:a:q:x:p:e:n:m:L:c:";
 
-enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT, OUTPUT_LOH, OUTPUT_SGE, OUTPUT_LGE, OUTPUT_GE, DISABLE_PON_TAG, DISABLE_CALLING, DISABLE_REFINE_SOMATIC, OPT_PURITY};
+enum { OPT_HELP = 1 , DOT_FILE, SV_FILE, MOD_FILE, IS_ONT, IS_PB, PHASE_INDEL, VERSION, PON_FILE, STRICT_PON_FILE, SOMATIC_CONNECT_ADJACENT, OUTPUT_LOH, OUTPUT_SGE, OUTPUT_LGE, OUTPUT_GE, DISABLE_PON_TAG, DISABLE_CALLING, DISABLE_REFINE_SOMATIC, OPT_PURITY, METHYL_XGB, DISABLE_METHYL_XGB, METHYL_XGB_SNV_THRESHOLD, METHYL_XGB_INDEL_THRESHOLD, METHYL_WINDOW, METH_HIGH, METH_LOW};
 
-static const struct option longopts[] = { 
+static const struct option longopts[] = {
     { "help",                 no_argument,        NULL, OPT_HELP },
     { "dot",                  no_argument,        NULL, DOT_FILE },  
     { "ont",                  no_argument,        NULL, IS_ONT }, 
@@ -78,6 +93,13 @@ static const struct option longopts[] = {
     { "disable-pon-tag",      no_argument,        NULL, DISABLE_PON_TAG },
     { "disable-calling",      no_argument,        NULL, DISABLE_CALLING },
     { "disable-refine-somatic", no_argument,        NULL, DISABLE_REFINE_SOMATIC },
+    { "methyl-xgb",           no_argument,        NULL, METHYL_XGB },
+    { "disable-methyl-xgb",   no_argument,        NULL, DISABLE_METHYL_XGB },
+    { "methyl-xgb-snv-threshold", required_argument,  NULL, METHYL_XGB_SNV_THRESHOLD },
+    { "methyl-xgb-indel-threshold", required_argument,  NULL, METHYL_XGB_INDEL_THRESHOLD },
+    { "methyl-window",        required_argument,  NULL, METHYL_WINDOW },
+    { "meth-high",            required_argument,  NULL, METH_HIGH },
+    { "meth-low",             required_argument,  NULL, METH_LOW },
     { "reference",            required_argument,  NULL, 'r' },
     { "snp-file",             required_argument,  NULL, 's' },
     { "bam-file",             required_argument,  NULL, 'b' },
@@ -98,6 +120,73 @@ static const struct option longopts[] = {
     { NULL, 0, NULL, 0 }
 };
 
+namespace {
+bool hasOnlyTrailingWhitespace(const char *text) {
+    while(text != nullptr && *text != '\0') {
+        if(!std::isspace(static_cast<unsigned char>(*text))) {
+            return false;
+        }
+        text++;
+    }
+    return true;
+}
+
+bool parseFiniteDouble(const char *text, double &value) {
+    if(text == nullptr || *text == '\0') {
+        return false;
+    }
+
+    errno = 0;
+    char *end = nullptr;
+    const double parsed = std::strtod(text, &end);
+    if(end == text || errno == ERANGE || !hasOnlyTrailingWhitespace(end) || !std::isfinite(parsed)) {
+        return false;
+    }
+
+    value = parsed;
+    return true;
+}
+
+bool parseFiniteFloat(const char *text, float &value) {
+    double parsed = 0.0;
+    if(!parseFiniteDouble(text, parsed) ||
+       parsed < -std::numeric_limits<float>::max() ||
+       parsed > std::numeric_limits<float>::max()) {
+        return false;
+    }
+
+    const float converted = static_cast<float>(parsed);
+    if(!std::isfinite(converted)) {
+        return false;
+    }
+
+    value = converted;
+    return true;
+}
+
+bool parseInteger(const char *text, int &value) {
+    if(text == nullptr || *text == '\0') {
+        return false;
+    }
+
+    errno = 0;
+    char *end = nullptr;
+    const long parsed = std::strtol(text, &end, 10);
+    if(end == text || errno == ERANGE || !hasOnlyTrailingWhitespace(end) ||
+       parsed < std::numeric_limits<int>::min() ||
+       parsed > std::numeric_limits<int>::max()) {
+        return false;
+    }
+
+    value = static_cast<int>(parsed);
+    return true;
+}
+
+const char *numericOptionValue(const char *text) {
+    return text == nullptr ? "" : text;
+}
+}
+
 namespace opt
 {
     static int numThreads = 1;
@@ -117,6 +206,14 @@ namespace opt
     static bool disablePonTag=false;
     static bool disableCalling=false;
     static bool disableRefineSomatic=false;
+    static bool enableMethylXgb=true;
+    static bool methylXgbExplicitEnable=false;
+    static bool methylXgbExplicitDisable=false;
+    static double methylXgbSnvThreshold=METHYL_XGB_DEFAULT_SNV_THRESHOLD;
+    static double methylXgbIndelThreshold=METHYL_XGB_DEFAULT_INDEL_THRESHOLD;
+    static int methylXgbWindow=2000;
+    static float methylXgbMethHigh=0.8f;
+    static float methylXgbMethLow=0.2f;
     
     static int connectAdjacent = 35;
     static int mappingQuality = 1;
@@ -146,7 +243,7 @@ namespace opt
 void PhasingOptions(int argc, char** argv)
 {
     optind=1;    //reset getopt
-    
+
     bool die = false;
     for (char c; (c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1;)
     {
@@ -187,7 +284,56 @@ void PhasingOptions(int argc, char** argv)
         case DISABLE_PON_TAG: opt::disablePonTag=true; break;
         case DISABLE_CALLING: opt::disableCalling=true; break;
         case DISABLE_REFINE_SOMATIC: opt::disableRefineSomatic=true; break;
-        case OPT_PURITY: arg >> opt::purity; break;
+        case OPT_PURITY:
+            if(!parseFiniteDouble(optarg, opt::purity) || opt::purity < 0.0 || opt::purity > 1.0) {
+                std::cerr << SUBPROGRAM " invalid purity. value: "
+                          << numericOptionValue(optarg)
+                          << "\n please check --purity=[0~1]\n";
+                die = true;
+            }
+            break;
+        case METHYL_XGB: opt::enableMethylXgb=true; opt::methylXgbExplicitEnable=true; break;
+        case DISABLE_METHYL_XGB: opt::enableMethylXgb=false; opt::methylXgbExplicitDisable=true; break;
+        case METHYL_XGB_SNV_THRESHOLD:
+            if(!parseFiniteDouble(optarg, opt::methylXgbSnvThreshold)) {
+                std::cerr << SUBPROGRAM " invalid methyl-xgb-snv-threshold. value: "
+                          << numericOptionValue(optarg)
+                          << "\n please check --methyl-xgb-snv-threshold=[0~1]\n";
+                die = true;
+            }
+            break;
+        case METHYL_XGB_INDEL_THRESHOLD:
+            if(!parseFiniteDouble(optarg, opt::methylXgbIndelThreshold)) {
+                std::cerr << SUBPROGRAM " invalid methyl-xgb-indel-threshold. value: "
+                          << numericOptionValue(optarg)
+                          << "\n please check --methyl-xgb-indel-threshold=[0~1]\n";
+                die = true;
+            }
+            break;
+        case METHYL_WINDOW:
+            if(!parseInteger(optarg, opt::methylXgbWindow)) {
+                std::cerr << SUBPROGRAM " invalid methyl-window. value: "
+                          << numericOptionValue(optarg)
+                          << "\n please check --methyl-window=Num\n";
+                die = true;
+            }
+            break;
+        case METH_HIGH:
+            if(!parseFiniteFloat(optarg, opt::methylXgbMethHigh)) {
+                std::cerr << SUBPROGRAM " invalid meth-high. value: "
+                          << numericOptionValue(optarg)
+                          << "\n please check --meth-high=[0~1]\n";
+                die = true;
+            }
+            break;
+        case METH_LOW:
+            if(!parseFiniteFloat(optarg, opt::methylXgbMethLow)) {
+                std::cerr << SUBPROGRAM " invalid meth-low. value: "
+                          << numericOptionValue(optarg)
+                          << "\n please check --meth-low=[0~1]\n";
+                die = true;
+            }
+            break;
         case OPT_HELP:
             std::cout << CORRECT_USAGE_MESSAGE;
             exit(EXIT_SUCCESS);
@@ -231,7 +377,20 @@ void PhasingOptions(int argc, char** argv)
     else{
         std::cerr << SUBPROGRAM ": missing reference.\n";
         die = true;
-    }  
+    }
+
+    if(opt::bamFile.empty()){
+        std::cerr << SUBPROGRAM ": missing BAM file.\n";
+        die = true;
+    }
+
+    if(opt::bamFile.size() > 1 &&
+       somatic_refinement::shouldCollectMethylCalls(opt::purity, opt::enableMethylXgb)){
+        std::cerr << SUBPROGRAM
+                  << ": MethylXGB requires exactly one tumor or tumor-mixture BAM. "
+                  << "Use one -b input or add --disable-methyl-xgb for multi-BAM phasing.\n";
+        die = true;
+    }
     
     if ( opt::numThreads < 1 ){
         std::cerr << SUBPROGRAM " invalid threads. value: " 
@@ -310,11 +469,36 @@ void PhasingOptions(int argc, char** argv)
         die = true;
     }
 
-    if ( opt::purity >= 0 ){
-        if ( opt::purity > 1.0 ){
-            std::cerr << SUBPROGRAM " invalid purity. value: "
-                      << opt::purity
-                      << "\n please check --purity=[0~1]\n";
+    if ( opt::methylXgbExplicitEnable && opt::methylXgbExplicitDisable ){
+        std::cerr << SUBPROGRAM ": --methyl-xgb and --disable-methyl-xgb cannot be used together.\n";
+        die = true;
+    }
+
+    if ( opt::enableMethylXgb ){
+        if( !std::isfinite(opt::methylXgbSnvThreshold) || opt::methylXgbSnvThreshold < 0.0 || opt::methylXgbSnvThreshold > 1.0 ){
+            std::cerr << SUBPROGRAM " invalid methyl-xgb-snv-threshold. value: "
+                      << opt::methylXgbSnvThreshold
+                      << "\n please check --methyl-xgb-snv-threshold=[0~1]\n";
+            die = true;
+        }
+        if( !std::isfinite(opt::methylXgbIndelThreshold) || opt::methylXgbIndelThreshold < 0.0 || opt::methylXgbIndelThreshold > 1.0 ){
+            std::cerr << SUBPROGRAM " invalid methyl-xgb-indel-threshold. value: "
+                      << opt::methylXgbIndelThreshold
+                      << "\n please check --methyl-xgb-indel-threshold=[0~1]\n";
+            die = true;
+        }
+        if( opt::methylXgbWindow <= 0 ){
+            std::cerr << SUBPROGRAM " invalid methyl-window. value: "
+                      << opt::methylXgbWindow
+                      << "\n please check --methyl-window=Num\n";
+            die = true;
+        }
+        if( !std::isfinite(opt::methylXgbMethLow) || !std::isfinite(opt::methylXgbMethHigh) || opt::methylXgbMethLow < 0.0 || opt::methylXgbMethHigh < 0.0 || opt::methylXgbMethLow >= opt::methylXgbMethHigh || opt::methylXgbMethHigh > 1.0 ){
+            std::cerr << SUBPROGRAM " invalid methyl thresholds. meth-low: "
+                      << opt::methylXgbMethLow
+                      << " meth-high: "
+                      << opt::methylXgbMethHigh
+                      << "\n please check --meth-low and --meth-high\n";
             die = true;
         }
     }
@@ -378,6 +562,7 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     ecParams.disablePonTag=opt::disablePonTag;
     ecParams.disableCalling=opt::disableCalling;
     ecParams.disableRefineSomatic=opt::disableRefineSomatic;
+    ecParams.enableMethylXgb=opt::enableMethylXgb;
     
     ecParams.connectAdjacent=opt::connectAdjacent;
     ecParams.mappingQuality=opt::mappingQuality;
@@ -396,6 +581,11 @@ int PhasingMain(int argc, char** argv, std::string in_version)
     ecParams.strictPonFile=opt::strictPonFile;
     
     ecParams.somaticConnectAdjacent=opt::somaticConnectAdjacent;
+    ecParams.methylXgbWindow=opt::methylXgbWindow;
+    ecParams.methylXgbMethHigh=opt::methylXgbMethHigh;
+    ecParams.methylXgbMethLow=opt::methylXgbMethLow;
+    ecParams.methylXgbSnvThreshold=opt::methylXgbSnvThreshold;
+    ecParams.methylXgbIndelThreshold=opt::methylXgbIndelThreshold;
     
     ecParams.version=in_version;
     ecParams.command=opt::command;

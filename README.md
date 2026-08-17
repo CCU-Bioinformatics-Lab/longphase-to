@@ -41,6 +41,7 @@ LongPhase-TO Overview:
 - [Usage](#usage)
   - [Phase command](#phase-command)
     - [SNP only phasing](./docs/phase.md#snp-only-phasing)
+    - [MethylXGB somatic refinement](./docs/phase.md#methylxgb-somatic-refinement)
     - [Complete list of Phase parameters](./docs/phase.md#complete-list-of-phase-parameters)
     - [Phased Genotype Output Format](./docs/phase.md#phased-genotype-output-format)
     - [Haplotype-aware Variant Re-calling Output Format](./docs/phase.md#haplotype-aware-variant-re-calling-output-format)
@@ -86,6 +87,9 @@ docker build -t longphase-to:latest .
 For SNP-only phasing, the input of LongPhase-TO consists of SNPs in VCF (e.g., SNP.vcf), an indexed reference in Fasta (e.g., reference.fasta, reference.fasta.fai), and one (or multiple) indexed read-to-reference alignment in BAM (e.g., alignment1.bam, alignment1.bai, alignment2.bam, ...) (see [Input Preparation](#input-preparation)). For information on using PoN files, refer to [Panels of normals (PoNs) file](#panels-of-normals-pons-file). An example of SNP phasing usage is shown below.
 
 This version of LongPhase-TO supports ONT data only. Please use ONT long-read sequencing data as input.
+
+MethylXGB somatic refinement is enabled by default for samples with tumor purity `<=0.7`. It uses embedded SNV and indel models and requires one tumor or tumor-mixture BAM retaining valid `MM` and `ML` base-modification tags. Add `--disable-methyl-xgb` when phasing multiple BAMs, or when the sample (e.g., a cell line) has no methylation information. No external `.joblib` file or Python runtime is needed. Samples with purity `>0.9` continue to use the existing high-purity `convertNonGermlineToSomatic` path. See [MethylXGB somatic refinement](./docs/phase.md#methylxgb-somatic-refinement) for the complete purity policy and options.
+
 ```bash
 # caller options: clairs_to_ss, clairs_to_ssrs, deepsomatic_to
 
@@ -96,6 +100,7 @@ longphase-to phase \
 -r reference.fasta \
 -t 8 \
 -o phased_prefix \
+--disable-methyl-xgb \
 --caller caller_options \
 --pon-file pon1.vcf,pon2.vcf \
 --strict-pon-file pon3.vcf,pon4.vcf \
@@ -124,6 +129,7 @@ docker run -it \
 ```
 
 - [Complete list of Phase parameters](./docs/phase.md#complete-list-of-phase-parameters)
+- [MethylXGB somatic refinement](./docs/phase.md#methylxgb-somatic-refinement)
 - [Phased Genotype Output Format](./docs/phase.md#phased-genotype-output-format)
 - [Haplotype-aware Variant Re-calling Output Format](./docs/phase.md#haplotype-aware-variant-re-calling-output-format)
 - [Purity Output Format](./docs/phase.md#phased-genotype-output-format)
