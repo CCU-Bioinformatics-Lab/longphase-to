@@ -2109,9 +2109,14 @@ void Clip::detectLOHRegion(SnpParser &snpMap, std::vector<LOHSegment> &LOHSegmen
     for (auto posIter = currentVariants->begin(); posIter != currentVariants->end(); ++posIter) {
         if (intervalIter != largeGenomicEventInterval->end() && posIter->first >= *intervalIter) {
             double genotypeRatio = (hetCountNum + homCountNum > 0) ? static_cast<double>(hetCountNum) / (homCountNum + hetCountNum) : 0.0;
+            // The leading region [chromosome start, first boundary] has no previous
+            // boundary. Use 0 as its start; dereferencing *(intervalIter-1) at begin()
+            // is an out-of-bounds read that can inject a garbage start and corrupt the
+            // LOH segment length.
+            int segStart = (intervalIter == largeGenomicEventInterval->begin()) ? 0 : *(intervalIter-1);
             if (hetCountNum + homCountNum > 0){
                 if (genotypeRatio < 0.09){
-                    LOHSegments.push_back(LOHSegment(*(intervalIter-1), *intervalIter, genotypeRatio));
+                    LOHSegments.push_back(LOHSegment(segStart, *intervalIter, genotypeRatio));
                 }
             }
             
