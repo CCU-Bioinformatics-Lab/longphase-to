@@ -88,7 +88,14 @@ For SNP-only phasing, the input of LongPhase-TO consists of SNPs in VCF (e.g., S
 
 This version of LongPhase-TO supports ONT data only. Please use ONT long-read sequencing data as input.
 
-MethylXGB somatic refinement is enabled by default for samples with tumor purity `<=0.7`. It uses embedded SNV and indel models and requires one tumor or tumor-mixture BAM retaining valid `MM` and `ML` base-modification tags. Add `--disable-methyl-xgb` when phasing multiple BAMs, or when the sample (e.g., a cell line) has no methylation information. No external `.joblib` file or Python runtime is needed. Samples with purity `>0.9` continue to use the existing high-purity `convertNonGermlineToSomatic` path. See [MethylXGB somatic refinement](./docs/phase.md#methylxgb-somatic-refinement) for the complete purity policy and options.
+MethylXGB is an optional methylation-based filter for refining somatic variant calls.
+
+- It is **not enabled by default**. Add `--methyl-xgb` to turn it on.
+- It needs a single tumor or tumor-mixture BAM, and that BAM must retain valid `MM` and `ML` base-modification tags.
+- Tumor purity does not have to be supplied. You may pass `--purity`, or let LongPhase-TO estimate it as usual.
+- Once enabled, the filter is actually applied only when the supplied or estimated purity is `<=0.7`.
+
+See [MethylXGB somatic refinement](./docs/phase.md#methylxgb-somatic-refinement) for the complete purity policy and options.
 
 ```bash
 # caller options: clairs_to_ss, clairs_to_ssrs, deepsomatic_to
@@ -100,11 +107,21 @@ longphase-to phase \
 -r reference.fasta \
 -t 8 \
 -o phased_prefix \
---disable-methyl-xgb \
 --caller caller_options \
 --pon-file pon1.vcf,pon2.vcf \
 --strict-pon-file pon3.vcf,pon4.vcf \
 # --loh # if need out loh bed
+```
+
+To enable the optional MethylXGB somatic refinement, add `--methyl-xgb` and use a single BAM:
+
+```bash
+longphase-to phase \
+  -s SNP.vcf \
+  -b tumor.bam \
+  -r reference.fasta \
+  -o output \
+  --methyl-xgb
 ```
 
 **Using Docker:**

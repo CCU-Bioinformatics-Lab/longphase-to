@@ -26,7 +26,7 @@ struct PhasingParameters
     bool outputSGE = false;  // Whether to output SmallGenomicEvent results
     bool outputLGE = false;  // Whether to output LargeGenomicEvent results
     bool outputGE = false;   // Whether to output GenomicEvent results
-    bool enableMethylXgb = true;
+    bool enableMethylXgb = false;
     
     int connectAdjacent;
     int mappingQuality;
