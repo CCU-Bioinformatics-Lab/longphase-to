@@ -1,6 +1,5 @@
 #include "Phasing.h"
 #include "PhasingProcess.h"
-#include "SomaticRefinementPolicy.h"
 #include "Util.h"
 #include <cerrno>
 #include <cctype>
@@ -43,8 +42,9 @@ static const char *CORRECT_USAGE_MESSAGE =
 "   --somaticConnectAdjacent=Num           connect adjacent N SNPs. default:6\n\n"
 
 "methylation XGBoost somatic refinement arguments:\n"
-"   --methyl-xgb                           enable refinement when purity <=0.7. default: True\n"
-"   --disable-methyl-xgb                   disable methylation feature XGBoost somatic refinement.\n"
+"   --methyl-xgb                           enable the optional methylation-based somatic refinement filter.\n"
+"                                          requires a single tumor or tumor-mixture BAM with valid MM/ML tags.\n"
+"                                          applied only when the supplied or estimated purity is <=0.7. default: False\n"
 "   --methyl-xgb-snv-threshold=[0~1]       SNV somatic probability threshold. default:0.44\n"
 "   --methyl-xgb-indel-threshold=[0~1]     indel somatic probability threshold. default:0.17\n"
 "   --methyl-window=Num                    variant-centered methylation window radius. default:2000\n"
@@ -206,7 +206,7 @@ namespace opt
     static bool disablePonTag=false;
     static bool disableCalling=false;
     static bool disableRefineSomatic=false;
-    static bool enableMethylXgb=true;
+    static bool enableMethylXgb=false;
     static bool methylXgbExplicitEnable=false;
     static bool methylXgbExplicitDisable=false;
     static double methylXgbSnvThreshold=METHYL_XGB_DEFAULT_SNV_THRESHOLD;
@@ -384,11 +384,10 @@ void PhasingOptions(int argc, char** argv)
         die = true;
     }
 
-    if(opt::bamFile.size() > 1 &&
-       somatic_refinement::shouldCollectMethylCalls(opt::purity, opt::enableMethylXgb)){
+    if(opt::bamFile.size() > 1 && opt::enableMethylXgb){
         std::cerr << SUBPROGRAM
-                  << ": MethylXGB requires exactly one tumor or tumor-mixture BAM. "
-                  << "Use one -b input or add --disable-methyl-xgb for multi-BAM phasing.\n";
+                  << ": --methyl-xgb requires exactly one tumor or tumor-mixture BAM. "
+                  << "Use a single -b input, or omit --methyl-xgb for multi-BAM phasing.\n";
         die = true;
     }
     
@@ -474,7 +473,10 @@ void PhasingOptions(int argc, char** argv)
         die = true;
     }
 
-    if ( opt::enableMethylXgb ){
+    // Validate MethylXGB tuning values whenever the user has not explicitly
+    // disabled the feature, so a malformed value is still reported even though
+    // MethylXGB is now off unless --methyl-xgb is given.
+    if ( !opt::methylXgbExplicitDisable ){
         if( !std::isfinite(opt::methylXgbSnvThreshold) || opt::methylXgbSnvThreshold < 0.0 || opt::methylXgbSnvThreshold > 1.0 ){
             std::cerr << SUBPROGRAM " invalid methyl-xgb-snv-threshold. value: "
                       << opt::methylXgbSnvThreshold
