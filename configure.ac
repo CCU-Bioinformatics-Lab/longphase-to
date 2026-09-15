@@ -1,4 +1,4 @@
-AC_INIT(longPhase,1.0)
+AC_INIT(longPhase,1.1)
 AC_CONFIG_HEADERS([config.h])
 
 AC_CONFIG_SUBDIRS([htslib jemalloc])

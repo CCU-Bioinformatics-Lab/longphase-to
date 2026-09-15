@@ -62,7 +62,7 @@ LongPhase-TO Overview:
 You are recommended to download a [linux 64bit binary release](https://github.com/CCU-Bioinformatics-Lab/longphase-to/releases/download/v1.1.0/longphase-to-linux-x64.tar.xz) without compilation. 
 
 ```bash
-wget https://github.com/CCU-Bioinformatics-Lab/longphase-to/releases/download/v1.0.0/longphase-to-linux-x64.tar.xz
+wget https://github.com/CCU-Bioinformatics-Lab/longphase-to/releases/download/v1.1.0/longphase-to-linux-x64.tar.xz
 tar -xJf longphase-to-linux-x64.tar.xz
 ```
 
