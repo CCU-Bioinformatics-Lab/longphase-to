@@ -2,6 +2,8 @@
 
 void ReadVariant::sort(){
     std::sort(variantVec.begin(), variantVec.end(), less_than_key());
+    std::sort(methylVec.begin(), methylVec.end(), less_than_methyl_key());
+    std::sort(methylXgbVariantVec.begin(), methylXgbVariantVec.end(), less_than_methyl_xgb_observation_key());
 }
 
 std::string getTargetString(std::string line, std::string start_sign, std::string end_sign){

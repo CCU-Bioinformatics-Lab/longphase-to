@@ -1,7 +1,11 @@
 #include "ParsingBam.h"
+#include "SomaticRefinementPolicy.h"
 
+#include <cctype>
+#include <limits>
 #include <string.h>
 #include <sstream>
+#include <vector>
 
 
 // vcf parser modify from 
@@ -1215,7 +1219,7 @@ void BamParser::direct_detect_alleles(int lastSNPPos, htsThreadPool &threadPool,
                 continue;
             }
 
-            get_snp(*bamHdr,*aln,readVariantVec, clipCount, ref_string, params.mismatchRate);
+            get_snp(*bamHdr,*aln,readVariantVec, clipCount, ref_string, params);
         }
         hts_idx_destroy(idx);
         bam_hdr_destroy(bamHdr);
@@ -1312,13 +1316,304 @@ std::vector<std::pair<int, char>> getWindowsDiffRef(const uint32_t *cigar, int c
     return offsetBase;
 }
 
-void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, double mismatchRate){
+static bool isCanonicalBaseCode(char base){
+    switch(std::toupper(static_cast<unsigned char>(base))){
+        case 'A':
+        case 'C':
+        case 'G':
+        case 'T':
+        case 'U':
+        case 'N':
+            return true;
+        default:
+            return false;
+    }
+}
+
+static int countCanonicalBaseInRead(const bam1_t &aln, char canonicalBase){
+    canonicalBase = std::toupper(static_cast<unsigned char>(canonicalBase));
+    if(canonicalBase == 'U'){
+        canonicalBase = 'T';
+    }
+    if(canonicalBase == 'N'){
+        return aln.core.l_qseq;
+    }
+
+    int count = 0;
+    const uint8_t *seq = bam_get_seq(&aln);
+    for(int readPos = 0; readPos < aln.core.l_qseq; readPos++){
+        char readBase = seq_nt16_str[bam_seqi(seq, readPos)];
+        if(readBase == canonicalBase){
+            count++;
+        }
+    }
+    return count;
+}
+
+static char reverseComplementCanonicalBase(char canonicalBase){
+    switch(std::toupper(static_cast<unsigned char>(canonicalBase))){
+        case 'A':
+            return 'T';
+        case 'C':
+            return 'G';
+        case 'G':
+            return 'C';
+        case 'T':
+        case 'U':
+            return 'A';
+        default:
+            return canonicalBase;
+    }
+}
+
+static bool parseMmDelta(const char *mmTag, size_t &idx, long &delta){
+    if(!std::isdigit(static_cast<unsigned char>(mmTag[idx]))){
+        return false;
+    }
+
+    delta = 0;
+    while(std::isdigit(static_cast<unsigned char>(mmTag[idx]))){
+        const int digit = mmTag[idx] - '0';
+        if(delta > (std::numeric_limits<long>::max() - digit) / 10){
+            return false;
+        }
+        delta = delta * 10 + digit;
+        idx++;
+    }
+    return true;
+}
+
+static bool isMmTagWithinReadLength(const bam1_t &aln){
+    uint8_t *mmAux = bam_aux_get(&aln, "MM");
+    if(mmAux == nullptr){
+        mmAux = bam_aux_get(&aln, "Mm");
+    }
+    if(mmAux == nullptr){
+        return false;
+    }
+
+    const char *mmTag = bam_aux2Z(mmAux);
+    if(mmTag == nullptr){
+        return false;
+    }
+
+    size_t idx = 0;
+    while(mmTag[idx] != '\0'){
+        if(mmTag[idx] == ';'){
+            idx++;
+            continue;
+        }
+
+        const char canonicalBase = mmTag[idx++];
+        if(!isCanonicalBaseCode(canonicalBase)){
+            return false;
+        }
+        if(mmTag[idx] != '+' && mmTag[idx] != '-'){
+            return false;
+        }
+        idx++;
+
+        while(mmTag[idx] != '\0' && mmTag[idx] != ',' && mmTag[idx] != ';'){
+            idx++;
+        }
+
+        if(mmTag[idx] == ';'){
+            idx++;
+            continue;
+        }
+        if(mmTag[idx] != ','){
+            return false;
+        }
+
+        const char countedBase = (aln.core.flag & BAM_FREVERSE)
+            ? reverseComplementCanonicalBase(canonicalBase)
+            : canonicalBase;
+        const int canonicalCount = countCanonicalBaseInRead(aln, countedBase);
+        long consumedCanonicalBases = 0;
+        while(mmTag[idx] == ','){
+            idx++;
+            long delta = 0;
+            if(!parseMmDelta(mmTag, idx, delta)){
+                return false;
+            }
+            const long remainingCanonicalBases =
+                static_cast<long>(canonicalCount) - consumedCanonicalBases;
+            if(remainingCanonicalBases <= 0 || delta >= remainingCanonicalBases){
+                return false;
+            }
+            consumedCanonicalBases += delta + 1;
+        }
+
+        if(mmTag[idx] == ';'){
+            idx++;
+        }
+        else if(mmTag[idx] != '\0'){
+            return false;
+        }
+    }
+    return true;
+}
+
+static std::vector<int> buildReadToRefMap(const bam1_t &aln){
+    std::vector<int> readToRef(aln.core.l_qseq, -1);
+    uint32_t *cigar = bam_get_cigar(&aln);
+    int readPos = 0;
+    int refPos = aln.core.pos;
+
+    for(uint32_t i = 0; i < aln.core.n_cigar; i++){
+        int cigarOp = bam_cigar_op(cigar[i]);
+        int cigarOpLen = bam_cigar_oplen(cigar[i]);
+
+        if(cigarOp == MATCH || cigarOp == EQ || cigarOp == X){
+            for(int j = 0; j < cigarOpLen; j++){
+                if(readPos >= 0 && readPos < aln.core.l_qseq){
+                    readToRef[readPos] = refPos;
+                }
+                readPos++;
+                refPos++;
+            }
+        }
+        else if(cigarOp == INSERTION || cigarOp == SOFT_CLIP){
+            readPos += cigarOpLen;
+        }
+        else if(cigarOp == DELETION || cigarOp == SKIP){
+            refPos += cigarOpLen;
+        }
+        else if(cigarOp == HARD_CLIP || cigarOp == N){
+            continue;
+        }
+    }
+
+    return readToRef;
+}
+
+static std::string getReadSequence(const bam1_t &aln){
+    std::string sequence;
+    sequence.reserve(aln.core.l_qseq);
+    const uint8_t *encoded = bam_get_seq(&aln);
+    for(int queryPos = 0; queryPos < aln.core.l_qseq; queryPos++){
+        sequence.push_back(seq_nt16_str[bam_seqi(encoded, queryPos)]);
+    }
+    return sequence;
+}
+
+static std::vector<methyl_xgb_feature_extraction::CigarOp> getMethylXgbCigar(const bam1_t &aln){
+    std::vector<methyl_xgb_feature_extraction::CigarOp> result;
+    result.reserve(aln.core.n_cigar);
+    const uint32_t *cigar = bam_get_cigar(&aln);
+    for(uint32_t i = 0; i < aln.core.n_cigar; i++){
+        result.emplace_back(bam_cigar_opchr(cigar[i]), bam_cigar_oplen(cigar[i]));
+    }
+    return result;
+}
+
+void BamParser::collectMethylXgbVariantObservations(const bam1_t &aln, ReadVariant &readResult){
+    if(currentVariants == nullptr || currentVariants->empty()){
+        return;
+    }
+
+    const int alignmentStart = aln.core.pos;
+    const int alignmentEnd = bam_endpos(&aln);
+    std::map<int, RefAlt>::const_iterator variantIter = currentVariants->lower_bound(alignmentStart);
+    const std::string querySequence = getReadSequence(aln);
+    const std::vector<methyl_xgb_feature_extraction::CigarOp> cigar = getMethylXgbCigar(aln);
+
+    while(variantIter != currentVariants->end() && variantIter->first < alignmentEnd){
+        const size_t refLength = variantIter->second.Ref.length();
+        const size_t altLength = variantIter->second.Alt.length();
+        const VariantType variantType = refLength == 1 && altLength == 1
+            ? SNP
+            : (refLength != altLength ? INDEL : VARIANT_UNDEFINED);
+        if(variantType == VARIANT_UNDEFINED){
+            variantIter++;
+            continue;
+        }
+        const methyl_xgb_feature_extraction::AlleleObservation observation =
+            methyl_xgb_feature_extraction::classifyAlleleAtAnchor(
+                alignmentStart,
+                variantIter->first,
+                variantIter->second.Ref,
+                variantIter->second.Alt,
+                querySequence,
+                bam_is_rev(&aln),
+                cigar
+            );
+        if(observation.rawDetailEligible){
+            readResult.methylXgbVariantVec.emplace_back(
+                variantIter->first,
+                observation.exactAllele,
+                true,
+                variantType
+            );
+        }
+        variantIter++;
+    }
+}
+
+void BamParser::collectMethylCalls(const bam1_t &aln, ReadVariant &readResult, float methHighThreshold, float methLowThreshold){
+    if(!isMmTagWithinReadLength(aln)){
+        return;
+    }
+
+    hts_base_mod_state *modState = hts_base_mod_state_alloc();
+    if(modState == nullptr){
+        return;
+    }
+
+    if(bam_parse_basemod(&aln, modState) < 0){
+        hts_base_mod_state_free(modState);
+        return;
+    }
+
+    std::vector<int> readToRef = buildReadToRefMap(aln);
+    hts_base_mod mods[10];
+    int readPos = 0;
+    int n = 0;
+
+    while((n = bam_next_basemod(&aln, modState, mods, 10, &readPos)) > 0){
+        if(readPos < 0 || readPos >= aln.core.l_qseq){
+            continue;
+        }
+        int refPos = readToRef[readPos];
+        if(refPos < 0){
+            continue;
+        }
+
+        for(int i = 0; i < n && i < 10; i++){
+            if(mods[i].qual >= 0 &&
+               (mods[i].modified_base == 'm' || mods[i].modified_base == 'h') &&
+               (mods[i].canonical_base == 'C' || mods[i].canonical_base == 'c')){
+                float probability = static_cast<float>(mods[i].qual) / 255.0f;
+                if(probability >= methHighThreshold){
+                    readResult.methylVec.emplace_back(refPos, METHYL_HIGH, probability);
+                }
+                else if(probability <= methLowThreshold){
+                    readResult.methylVec.emplace_back(refPos, METHYL_LOW, probability);
+                }
+            }
+        }
+    }
+
+    hts_base_mod_state_free(modState);
+}
+
+void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, const PhasingParameters &params){
 
     ReadVariant *tmpReadResult = new ReadVariant();
     (*tmpReadResult).read_name = bam_get_qname(&aln);
     (*tmpReadResult).source_id = bamHdr.target_name[aln.core.tid];
+    (*tmpReadResult).mapping_quality = aln.core.qual;
     (*tmpReadResult).reference_start = aln.core.pos;
     (*tmpReadResult).is_reverse = bam_is_rev(&aln);
+    const int flag = aln.core.flag;
+    (*tmpReadResult).methylXgbEligible =
+        aln.core.qual >= 10 &&
+        (flag & (BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY | BAM_FQCFAIL | BAM_FDUP)) == 0;
+    if((*tmpReadResult).methylXgbEligible &&
+       somatic_refinement::shouldCollectMethylCalls(params.purity, params.enableMethylXgb)){
+        collectMethylCalls(aln, *tmpReadResult, params.methylXgbMethHigh, params.methylXgbMethLow);
+        collectMethylXgbVariantObservations(aln, *tmpReadResult);
+    }
     
     // position relative to reference
     int ref_pos = aln.core.pos;
@@ -1366,14 +1661,22 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
         int cigar_oplen = bam_cigar_oplen(cigar[i]);
         
         // get the starting position of each variant currently.
-        int modPos = (*currentModIter).first;
-        int svPos = (*currentSVIter).first;
-        int variantPos = (*currentVariantIter).first;
+        int modPos = currentModIter != currentMod->end()
+            ? currentModIter->first
+            : std::numeric_limits<int>::max();
+        int svPos = currentSVIter != currentSV->end()
+            ? currentSVIter->first
+            : std::numeric_limits<int>::max();
+        int variantPos = currentVariantIter != currentVariants->end()
+            ? currentVariantIter->first
+            : std::numeric_limits<int>::max();
         
         // get the first variant detected by the alignment.
         while( currentVariantIter != currentVariants->end() && variantPos < ref_pos ){
             currentVariantIter++;
-            variantPos = (*currentVariantIter).first;
+            variantPos = currentVariantIter != currentVariants->end()
+                ? currentVariantIter->first
+                : std::numeric_limits<int>::max();
         }
         
         // Processing the region covered by the current CIGAR operator
@@ -1403,7 +1706,9 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
                     }
                 }
                 currentModIter++;
-                modPos = (*currentModIter).first;
+                modPos = currentModIter != currentMod->end()
+                    ? currentModIter->first
+                    : std::numeric_limits<int>::max();
             }
             // SV's position is minimal
             else if( ( currentVariantIter == currentVariants->end() || svPos < variantPos ) &&
@@ -1423,9 +1728,11 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
                 Variant *tmpVariant = new Variant(svPos, allele, SV );
                 (*tmpReadResult).variantVec.push_back( (*tmpVariant) );
                 delete tmpVariant;
-                // next SV iter 
+                // next SV iter
                 currentSVIter++;
-                svPos = (*currentSVIter).first;
+                svPos = currentSVIter != currentSV->end()
+                    ? currentSVIter->first
+                    : std::numeric_limits<int>::max();
             }
 
             // SNP's position is minimal
@@ -1509,7 +1816,9 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
                         delete tmpVariant;                        
                     }
                     currentVariantIter++;
-                    variantPos = (*currentVariantIter).first;
+                    variantPos = currentVariantIter != currentVariants->end()
+                        ? currentVariantIter->first
+                        : std::numeric_limits<int>::max();
                 }
                 else break;
             }
@@ -1544,7 +1853,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
             // If a reference is given
             // it will determine whether the SNP falls in the homopolymer
             // and start the processing of the SNP fall in the alignment GAP
-            if(ref_string != ""){
+            if(ref_string != "" && currentVariantIter != currentVariants->end()){
                 int del_len = cigar_oplen;
                 if ( ref_pos + del_len + 1 == (*currentVariantIter).first ){
                     //if( homopolymerLength((*currentVariantIter).first , ref_string) >=3 ){
@@ -1643,7 +1952,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
     double mmrate = ((float)num_of_mismatch / (float)length)*100;
 
     // if the mmrate is too high mark the read as fakeRead
-    if( mmrate > mismatchRate ){ 
+    if( mmrate > params.mismatchRate ){
       (*tmpReadResult).fakeRead = true;
     }
     else{
@@ -1651,8 +1960,14 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
     }
     //float error_rate = nm_value / length;
     
-    if( (*tmpReadResult).variantVec.size() > 0 )
+    const bool retainForMethylXgb =
+        (*tmpReadResult).methylXgbEligible &&
+        !(*tmpReadResult).methylXgbVariantVec.empty() &&
+        !(*tmpReadResult).methylVec.empty();
+    if(!(*tmpReadResult).variantVec.empty() || retainForMethylXgb){
+      (*tmpReadResult).sort();
       readVariantVec.push_back((*tmpReadResult));
+    }
     
     //std::cout<< "readname: " << bam_get_qname(&aln) << "\tnm_value: " << nm_value << "\tcigar_total_oplen: " << cigar_total_oplen << "\tcigar_clip_oplen: " << cigar_clip_oplen << "\tcigar_indel_oplen: " << cigar_indel_oplen << "\tmm_rate: " << mm_rate << "\n";
     //std::cout << bamHdr.target_name[aln.core.tid] << "\treadname: " << bam_get_qname(&aln) << "\t" << mmrate << "\n";

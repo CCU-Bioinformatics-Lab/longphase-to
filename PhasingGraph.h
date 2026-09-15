@@ -183,8 +183,14 @@ struct EdgeResult{
 };
 
 struct VariantBases{
-    int targetCount;
+    int targetCount = 0;
     std::map<int, int> offsetDiffRefCount; //offset, diff ref count
+};
+
+struct MethylXgbApplySummary {
+    int applied = 0;
+    int somatic = 0;
+    int nonSomatic = 0;
 };
 
 class VairiantGraph{
@@ -246,6 +252,8 @@ class VairiantGraph{
         void tagSomatic(std::map<int, RefAlt>* variants);
 
         void convertNonGermlineToSomatic();
+
+        MethylXgbApplySummary refineSomaticWithMethylXgb();
 
         void exportPhasingResult(PosPhasingResult &posPhasingResult, std::vector<LOHSegment> &LOHSegments);
         

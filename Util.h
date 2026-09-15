@@ -130,14 +130,46 @@ struct Variant{
     std::vector<std::pair<int, char>> offsetBase; //offset, base
 };
 
+enum MethylState {
+    METHYL_LOW = -1,
+    METHYL_HIGH = 1
+};
+
+struct MethylCall {
+    MethylCall(int position, MethylState state, float probability):
+        position(position),
+        state(state),
+        probability(probability){};
+
+    int position;
+    MethylState state;
+    float probability;
+};
+
+struct MethylXgbVariantObservation {
+    MethylXgbVariantObservation(int position, int allele, bool rawDetailEligible, VariantType type):
+        position(position),
+        allele(allele),
+        rawDetailEligible(rawDetailEligible),
+        type(type){};
+
+    int position;
+    int allele;
+    bool rawDetailEligible;
+    VariantType type;
+};
+
 struct ReadVariant{
     // init function
-    ReadVariant(): read_name(""), 
-            mapping_quality(0), 
-            source_id(""), 
-            sample_id(""), 
-            reference_start(0), 
-            BX_tag(""){}
+    ReadVariant(): read_name(""),
+            mapping_quality(0),
+            source_id(""),
+            sample_id(""),
+            reference_start(0),
+            BX_tag(""),
+            is_reverse(false),
+            fakeRead(false),
+            methylXgbEligible(false){}
             
     std::string read_name;
     int mapping_quality;
@@ -147,15 +179,34 @@ struct ReadVariant{
     std::string BX_tag;
     bool is_reverse;
     bool fakeRead;
-    
+    bool methylXgbEligible;
+
     std::vector<Variant> variantVec;
-    
+    std::vector<MethylCall> methylVec;
+    std::vector<MethylXgbVariantObservation> methylXgbVariantVec;
+
     void sort();
 };
 
 struct less_than_key
 {
     inline bool operator() (const Variant& v1, const Variant& v2)
+    {
+        return (v1.position < v2.position);
+    }
+};
+
+struct less_than_methyl_key
+{
+    inline bool operator() (const MethylCall& v1, const MethylCall& v2)
+    {
+        return (v1.position < v2.position);
+    }
+};
+
+struct less_than_methyl_xgb_observation_key
+{
+    inline bool operator() (const MethylXgbVariantObservation& v1, const MethylXgbVariantObservation& v2)
     {
         return (v1.position < v2.position);
     }

@@ -40,3 +40,10 @@ jemalloc/*
 configure
 config.*
 autom4te.cache/
+
+# Python helper/test caches
+__pycache__/
+*.py[cod]
+
+# Not yet wired into the build/CI
+test/

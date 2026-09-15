@@ -7,7 +7,9 @@ CPPFLAGS = -std=c++11 -g -Wall -O3 -fopenmp
 LDFLAGS  =
 LIBS     =
 
-OBJ = Haplotag.o ParsingBam.o Util.o HaplotagProcess.o PhasingProcess.o Phasing.o PhasingGraph.o ModCall.o ModCallParsingBam.o ModCallProcess.o main.o
+OBJ = Haplotag.o ParsingBam.o Util.o HaplotagProcess.o PhasingProcess.o Phasing.o PhasingGraph.o MethylXgbModel.o MethylXgbFeatureExtraction.o ModCall.o ModCallParsingBam.o ModCallProcess.o main.o
+DEPDIR = build/deps
+DEPS = $(OBJ:%.o=$(DEPDIR)/%.d)
 
 PROGRAMS = longphase-to
 
@@ -39,11 +41,19 @@ JEMLIB = $(JEMDIR)/lib/libjemalloc.a -ldl
 $(PROGRAMS): $(OBJ)
 	$(CXX) $(ALL_CPPFLAGS) $(ALL_LDFLAGS)	-o $@ $^ $(HTSLIB_LIB) $(JEMLIB)
 
-%.o: %.cpp
-	$(CXX) $(ALL_CPPFLAGS) -o $@ -c $^
+%.o: %.cpp | $(DEPDIR)
+	$(CXX) $(ALL_CPPFLAGS) -MMD -MP -MF $(DEPDIR)/$*.d -MT $@ -o $@ -c $<
+
+MethylXgbModel.o: MethylXgbModel.cpp MethylXgbModel.h MethylXgbModelData.inc
+
+$(DEPDIR):
+	mkdir -p $@
+
+-include $(DEPS)
 
 mostlyclean:
-	-rm -f *.o
+	-rm -f *.o *.d
+	-rm -rf $(DEPDIR)
 
 clean: mostlyclean
 	-rm -f $(PROGRAMS)

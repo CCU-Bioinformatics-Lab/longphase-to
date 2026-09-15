@@ -2,6 +2,7 @@
 #define PARSINGBAM_H
 
 #include "Util.h"
+#include "MethylXgbFeatureExtraction.h"
 #include "PhasingProcess.h"
 #include <htslib/sam.h>
 #include <htslib/faidx.h>
@@ -273,7 +274,9 @@ class BamParser{
         // mod map and iter
         std::map<int, std::map<std::string ,RefAlt> > *currentMod;
         std::map<int, std::map<std::string ,RefAlt> >::iterator firstModIter;
-        void get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, double mismatchRate);
+        void get_snp(const bam_hdr_t &bamHdr,const bam1_t &aln, std::vector<ReadVariant> &readVariantVec, ClipCount &clipCount, const std::string &ref_string, const PhasingParameters &params);
+        void collectMethylCalls(const bam1_t &aln, ReadVariant &readResult, float methHighThreshold, float methLowThreshold);
+        void collectMethylXgbVariantObservations(const bam1_t &aln, ReadVariant &readResult);
         void getClip(int pos, int clipFrontBack, int len, ClipCount &clipCount);
    
     public:
