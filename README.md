@@ -1,5 +1,7 @@
 # LongPhase-TO
 **LongPhase-TO** is a tumor-only variant phasing and analysis pipeline that extends [**LongPhase**](https://github.com/twolinin/longphase) for ONT long-read sequencing data.  
+
+📄 **Paper:** [LongPhase-TO on bioRxiv](https://www.biorxiv.org/content/10.64898/2026.09.14.751225v1)  
 ![Longphase-TO Overview](./images/LongPhase-TO_overview.jpg)
 <!-- It supports:
 - **LOH (Loss of Heterozygosity) Detection**
