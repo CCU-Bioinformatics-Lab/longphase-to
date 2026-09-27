@@ -21,8 +21,6 @@ require arguments:
       -r, --reference=NAME            reference fasta.
 optional arguments:
       --tagSupplementary              tag supplementary alignment. default:false
-      --sv-file=NAME                  input phased SV vcf file.
-      --mod-file=NAME                 input a modified VCF file (produced by longphase modcall and processed by longphase phase).
       -q, --qualityThreshold=Num      not tag alignment if the mapping quality less than threshold. default:1
       -p, --percentageThreshold=Num   the alignment will be tagged according to the haplotype corresponding to most alleles.
                                       if the alignment has no obvious corresponding haplotype, it will not be tagged. default:0.6
