@@ -209,6 +209,7 @@ namespace opt
     static bool enableMethylXgb=false;
     static bool methylXgbExplicitEnable=false;
     static bool methylXgbExplicitDisable=false;
+    static bool methylXgbTuningSet=false;
     static double methylXgbSnvThreshold=METHYL_XGB_DEFAULT_SNV_THRESHOLD;
     static double methylXgbIndelThreshold=METHYL_XGB_DEFAULT_INDEL_THRESHOLD;
     static int methylXgbWindow=2000;
@@ -295,6 +296,7 @@ void PhasingOptions(int argc, char** argv)
         case METHYL_XGB: opt::enableMethylXgb=true; opt::methylXgbExplicitEnable=true; break;
         case DISABLE_METHYL_XGB: opt::enableMethylXgb=false; opt::methylXgbExplicitDisable=true; break;
         case METHYL_XGB_SNV_THRESHOLD:
+            opt::methylXgbTuningSet=true;
             if(!parseFiniteDouble(optarg, opt::methylXgbSnvThreshold)) {
                 std::cerr << SUBPROGRAM " invalid methyl-xgb-snv-threshold. value: "
                           << numericOptionValue(optarg)
@@ -303,6 +305,7 @@ void PhasingOptions(int argc, char** argv)
             }
             break;
         case METHYL_XGB_INDEL_THRESHOLD:
+            opt::methylXgbTuningSet=true;
             if(!parseFiniteDouble(optarg, opt::methylXgbIndelThreshold)) {
                 std::cerr << SUBPROGRAM " invalid methyl-xgb-indel-threshold. value: "
                           << numericOptionValue(optarg)
@@ -311,6 +314,7 @@ void PhasingOptions(int argc, char** argv)
             }
             break;
         case METHYL_WINDOW:
+            opt::methylXgbTuningSet=true;
             if(!parseInteger(optarg, opt::methylXgbWindow)) {
                 std::cerr << SUBPROGRAM " invalid methyl-window. value: "
                           << numericOptionValue(optarg)
@@ -319,6 +323,7 @@ void PhasingOptions(int argc, char** argv)
             }
             break;
         case METH_HIGH:
+            opt::methylXgbTuningSet=true;
             if(!parseFiniteFloat(optarg, opt::methylXgbMethHigh)) {
                 std::cerr << SUBPROGRAM " invalid meth-high. value: "
                           << numericOptionValue(optarg)
@@ -327,6 +332,7 @@ void PhasingOptions(int argc, char** argv)
             }
             break;
         case METH_LOW:
+            opt::methylXgbTuningSet=true;
             if(!parseFiniteFloat(optarg, opt::methylXgbMethLow)) {
                 std::cerr << SUBPROGRAM " invalid meth-low. value: "
                           << numericOptionValue(optarg)
@@ -473,10 +479,10 @@ void PhasingOptions(int argc, char** argv)
         die = true;
     }
 
-    // Validate MethylXGB tuning values whenever the user has not explicitly
-    // disabled the feature, so a malformed value is still reported even though
-    // MethylXGB is now off unless --methyl-xgb is given.
-    if ( !opt::methylXgbExplicitDisable ){
+    // MethylXGB tuning values only take effect with --methyl-xgb, so their range
+    // is checked only then. Malformed (non-numeric) values are still rejected
+    // while parsing the options above.
+    if ( opt::enableMethylXgb ){
         if( !std::isfinite(opt::methylXgbSnvThreshold) || opt::methylXgbSnvThreshold < 0.0 || opt::methylXgbSnvThreshold > 1.0 ){
             std::cerr << SUBPROGRAM " invalid methyl-xgb-snv-threshold. value: "
                       << opt::methylXgbSnvThreshold
@@ -503,6 +509,10 @@ void PhasingOptions(int argc, char** argv)
                       << "\n please check --meth-low and --meth-high\n";
             die = true;
         }
+    }
+    else if ( opt::methylXgbTuningSet ){
+        std::cerr << SUBPROGRAM ": warning: --methyl-xgb-snv-threshold, --methyl-xgb-indel-threshold, "
+                  << "--methyl-window, --meth-high and --meth-low are ignored because --methyl-xgb is not set.\n";
     }
     
     if ( opt::readConfidence < 0.5 || opt::readConfidence > 1 ){
