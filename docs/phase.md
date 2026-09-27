@@ -65,7 +65,7 @@ The `purity > 0.9` high-purity path is independent of `--methyl-xgb` and behaves
 
 If the sample has no methylation information (e.g., a cell line), simply leave `--methyl-xgb` off; without usable `MM`/`ML` calls no variants receive MethylXGB predictions, and the step only adds unnecessary rerun overhead. When reads are converted to FASTQ and realigned, preserve the tags (for example, with `samtools fastq -T '*'` and `minimap2 -y`).
 
-Separate models are used for SNVs and indels. Both are compiled into the executable, so no external `.joblib` file and no Python runtime are required when running LongPhase-TO. The SNV and indel probability thresholds and the remaining MethylXGB parameters keep their existing defaults; see the parameter list below.
+Separate models are used for SNVs and indels. Both are compiled into the executable, so no external `.joblib` file and no Python runtime are required when running LongPhase-TO. The default SNV and indel probability thresholds and the remaining MethylXGB parameters are listed in the parameter list below. The indel model was retrained and its default threshold changed from 0.17 to 0.19 after the reverse-strand insertion classification fix (CCU-Bioinformatics-Lab/longphase-to#9); the SNV model and threshold are unchanged.
 
 MethylXGB feature extraction independently requires mapping quality `>=10` and excludes unmapped, secondary, supplementary, QC-failed, and duplicate alignments to match the deployment feature pipeline. These model-only filters do not change the reads used by the normal phasing graph.
 
