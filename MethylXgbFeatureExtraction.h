@@ -27,7 +27,9 @@ struct AlleleObservation {
 // Reproduces the training builders' pileup-anchor allele classification.
 // Coordinates are 0-based. Flags, MAPQ, and tumor-BAM eligibility are handled
 // by the caller; rawDetailEligible only represents the legacy extractor's
-// anchor-base screen.
+// anchor-base screen. querySequenceAsStored is in reference orientation for
+// both strands, so classification does not depend on isReverse (currently
+// unused; kept for interface stability, see longphase-to#9).
 AlleleObservation classifyAlleleAtAnchor(
     int alignmentStart0,
     int anchor0,
