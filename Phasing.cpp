@@ -46,7 +46,7 @@ static const char *CORRECT_USAGE_MESSAGE =
 "                                          requires a single tumor or tumor-mixture BAM with valid MM/ML tags.\n"
 "                                          applied only when the supplied or estimated purity is <=0.7. default: False\n"
 "   --methyl-xgb-snv-threshold=[0~1]       SNV somatic probability threshold. default:0.44\n"
-"   --methyl-xgb-indel-threshold=[0~1]     indel somatic probability threshold. default:0.17\n"
+"   --methyl-xgb-indel-threshold=[0~1]     indel somatic probability threshold. default:0.19\n"
 "   --methyl-window=Num                    variant-centered methylation window radius. default:2000\n"
 "   --meth-high=[0~1]                      high methylation probability threshold. default:0.8\n"
 "   --meth-low=[0~1]                       low methylation probability threshold. default:0.2\n\n"
