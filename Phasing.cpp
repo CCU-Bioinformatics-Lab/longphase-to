@@ -510,10 +510,6 @@ void PhasingOptions(int argc, char** argv)
             die = true;
         }
     }
-    else if ( opt::methylXgbTuningSet ){
-        std::cerr << SUBPROGRAM ": warning: --methyl-xgb-snv-threshold, --methyl-xgb-indel-threshold, "
-                  << "--methyl-window, --meth-high and --meth-low are ignored because --methyl-xgb is not set.\n";
-    }
     
     if ( opt::readConfidence < 0.5 || opt::readConfidence > 1 ){
         std::cerr << SUBPROGRAM " invalid readConfidence. value: " 
@@ -542,6 +538,11 @@ void PhasingOptions(int argc, char** argv)
 
     if(opt::disableCalling){
         opt::somaticConnectAdjacent = 0;
+    }
+
+    if ( !die && !opt::enableMethylXgb && opt::methylXgbTuningSet ){
+        std::cerr << SUBPROGRAM ": warning: --methyl-xgb-snv-threshold, --methyl-xgb-indel-threshold, "
+                  << "--methyl-window, --meth-high and --meth-low are ignored because --methyl-xgb is not set.\n";
     }
 
     if (die)
