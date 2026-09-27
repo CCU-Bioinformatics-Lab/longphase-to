@@ -28,17 +28,17 @@ FEATURE_NAMES = [
 
 EXPECTED_THRESHOLDS = {
     "Snv": 0.79,
-    "Indel": 0.17,
+    "Indel": 0.19,
 }
 
 EXPECTED_MODEL_SHA256 = {
     "Snv": "65d8a81373640cffc4f29473a31407701ed8bd4816aea6d85cad5baf804de556",
-    "Indel": "3adfd11447a22227b93dd7ae0bc229f585cf4a007e1d7eb536c1ccf2cb0b150c",
+    "Indel": "88815dda363a3817e20fa8271c59ce7f9878096ad80491e2687d0177cdd6da7f",
 }
 
 EXPECTED_METADATA_SHA256 = {
     "Snv": "bbb1ac41f3e894f5b28285ce59b10756d16dc7546ca9a0bc0a2d62efb52aba97",
-    "Indel": "84e41b707297f938e4dd68b1174c7139eb86c534974747203b9a585bf8f2f3e6",
+    "Indel": "4c6639dac031b9720d698a98e9b75586b00a3df5cf6b567f9f82881cb92ac644",
 }
 
 

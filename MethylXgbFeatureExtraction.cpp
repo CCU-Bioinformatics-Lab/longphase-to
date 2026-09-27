@@ -96,32 +96,6 @@ char uppercase(char base) {
     return static_cast<char>(std::toupper(static_cast<unsigned char>(base)));
 }
 
-char complement(char base) {
-    switch(base) {
-        case 'A': return 'T';
-        case 'C': return 'G';
-        case 'G': return 'C';
-        case 'T': return 'A';
-        case 'N': return 'N';
-        case 'a': return 't';
-        case 'c': return 'g';
-        case 'g': return 'c';
-        case 't': return 'a';
-        case 'n': return 'n';
-        default: return base;
-    }
-}
-
-std::string reverseComplement(const std::string &sequence) {
-    std::string result;
-    result.reserve(sequence.size());
-    for(std::string::const_reverse_iterator iter = sequence.rbegin();
-        iter != sequence.rend(); ++iter) {
-        result.push_back(complement(*iter));
-    }
-    return result;
-}
-
 }  // namespace
 
 AlleleObservation classifyAlleleAtAnchor(
@@ -164,11 +138,11 @@ AlleleObservation classifyAlleleAtAnchor(
                 return AlleleObservation(Allele_UNDEFINED, rawDetailEligible);
             }
 
-            std::string inserted = querySequenceAsStored.substr(
+            // The stored query sequence is already in reference (forward)
+            // orientation for reverse-strand reads, as is the VCF ALT, so the
+            // inserted bases are compared as-is (longphase-to#9).
+            const std::string inserted = querySequenceAsStored.substr(
                 insertionStart, insertionLength);
-            if(isReverse) {
-                inserted = reverseComplement(inserted);
-            }
             if(inserted == alt.substr(ref.size())) {
                 return AlleleObservation(ALT_ALLELE, rawDetailEligible);
             }
