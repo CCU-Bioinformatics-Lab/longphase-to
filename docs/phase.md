@@ -119,7 +119,7 @@ methylation XGBoost somatic refinement arguments:
                                           requires a single tumor or tumor-mixture BAM with valid MM/ML tags.
                                           applied only when the supplied or estimated purity is <=0.7. default: False
    --methyl-xgb-snv-threshold=[0~1]       SNV somatic probability threshold. default:0.44
-   --methyl-xgb-indel-threshold=[0~1]     indel somatic probability threshold. default:0.17
+   --methyl-xgb-indel-threshold=[0~1]     indel somatic probability threshold. default:0.19
    --methyl-window=Num                    variant-centered methylation window radius. default:2000
    --meth-high=[0~1]                      high methylation probability threshold. default:0.8
    --meth-low=[0~1]                       low methylation probability threshold. default:0.2
