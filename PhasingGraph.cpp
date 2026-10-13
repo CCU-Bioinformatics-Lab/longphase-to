@@ -11,8 +11,8 @@ SubEdge::SubEdge():readCount(0){
     altRead = new std::map<int, std::vector<std::string> >;
     refQuality = new std::map<int, int>;
     altQuality = new std::map<int, int>;
-    refReadCount = new std::map<int, float>;
-    altReadCount = new std::map<int, float>;
+    refReadCount = new SortedVecMap<int, float>;
+    altReadCount = new SortedVecMap<int, float>;
 }
 
 SubEdge::~SubEdge(){ 
@@ -27,7 +27,7 @@ void SubEdge::destroy(){
     delete altReadCount;
 }
 
-void SubEdge::addSubEdge(Variant &currentNode, Variant &connectNode, std::string readName, int conditionQuality, double lowQualityWeight, bool fakeRead){
+void SubEdge::addSubEdge(Variant &currentNode, Variant &connectNode, const std::string &readName, int conditionQuality, double lowQualityWeight, bool fakeRead, SubEdgeHint *hint){
     double edgeWeight = 1;
     //if the base quality on both snps is high enough and didn't be marked as fakeRead, the edge has normal weight 
     if(fakeRead){
@@ -43,7 +43,8 @@ void SubEdge::addSubEdge(Variant &currentNode, Variant &connectNode, std::string
         //(*refRead)[connectNode.position].push_back(readName);
         // quality sum
         // (*refQuality)[connectNode.position] += currentQuality + connectNode.quality;
-        (*refReadCount)[connectNode.position] += edgeWeight;
+        float &count = hint ? refReadCount->atFrom(hint->ref, connectNode.position) : (*refReadCount)[connectNode.position];
+        count += edgeWeight;
     }
     // target noded is ALT allele
     else if(connectNode.allele == 1 ){
@@ -51,7 +52,8 @@ void SubEdge::addSubEdge(Variant &currentNode, Variant &connectNode, std::string
         // (*altRead)[connectNode.position].push_back(readName);
         // quality sum
         // (*refQuality)[connectNode.position] += currentQuality + connectNode.quality;
-        (*altReadCount)[connectNode.position] += edgeWeight;
+        float &count = hint ? altReadCount->atFrom(hint->alt, connectNode.position) : (*altReadCount)[connectNode.position];
+        count += edgeWeight;
     }
     // readCount++;
 }
@@ -61,7 +63,7 @@ std::pair<float,float> SubEdge::BestPair(int targetPos){
 }
 
 float SubEdge::getRefReadCount(int targetPos){
-    std::map<int, float>::iterator posIter = refReadCount->find(targetPos);
+    auto posIter = refReadCount->find(targetPos);
     if( posIter != refReadCount->end() ){
         return posIter->second;
     }
@@ -69,7 +71,7 @@ float SubEdge::getRefReadCount(int targetPos){
 }
 
 float SubEdge::getAltReadCount(int targetPos){
-    std::map<int, float>::iterator posIter = altReadCount->find(targetPos);
+    auto posIter = altReadCount->find(targetPos);
     if( posIter != altReadCount->end() ){
         return posIter->second;
     }
@@ -78,10 +80,10 @@ float SubEdge::getAltReadCount(int targetPos){
 
 std::vector<std::string> SubEdge::showEdge(std::string message){
     std::vector<std::string> result;
-    for(std::map<int, float >::iterator edgeIter = refReadCount->begin() ; edgeIter != refReadCount->end() ; edgeIter++ ){
+    for(auto edgeIter = refReadCount->begin() ; edgeIter != refReadCount->end() ; edgeIter++ ){
         result.push_back(message +" -> ref_" + std::to_string((*edgeIter).first) + "[label=" + std::to_string((*edgeIter).second) + "];");
     }
-    for(std::map<int, float >::iterator edgeIter = altReadCount->begin() ; edgeIter != altReadCount->end() ; edgeIter++ ){
+    for(auto edgeIter = altReadCount->begin() ; edgeIter != altReadCount->end() ; edgeIter++ ){
         result.push_back(message +" -> alt_" + std::to_string((*edgeIter).first) + "[label=" + std::to_string((*edgeIter).second) + "];");
     }
     return result;
@@ -89,10 +91,10 @@ std::vector<std::string> SubEdge::showEdge(std::string message){
 
 std::vector<std::pair<int,int>> SubEdge::getConnectPos(){
     std::vector<std::pair<int,int>> result;
-    for(std::map<int, float >::iterator edgeIter = refReadCount->begin() ; edgeIter != refReadCount->end() ; edgeIter++ ){
+    for(auto edgeIter = refReadCount->begin() ; edgeIter != refReadCount->end() ; edgeIter++ ){
         result.push_back( std::make_pair( (*edgeIter).first, 0 ) );
     }
-    for(std::map<int, float >::iterator edgeIter = altReadCount->begin() ; edgeIter != altReadCount->end() ; edgeIter++ ){
+    for(auto edgeIter = altReadCount->begin() ; edgeIter != altReadCount->end() ; edgeIter++ ){
         result.push_back( std::make_pair( (*edgeIter).first, 1 ) );
     }
     return result;
@@ -147,15 +149,15 @@ VariantEdge::VariantEdge(int inCurrPos){
     currPos = inCurrPos;
     alt = new SubEdge();
     ref = new SubEdge();
-    edgeCount = new std::map<int, std::map<int, ThreePointEdge>>;
+    edgeCount = new SortedVecMap<int, SortedVecMap<int, ThreePointEdge>>;
     refcnt = 0; 
     altcnt = 0; 
     coverage = 0;  
 }
 
-void VariantEdge::addSegmentEdge(Variant &currentNode, Variant &connectNode, Variant &connectSecondNode){
+void VariantEdge::addSegmentEdge(SortedVecMap<int, ThreePointEdge> &connectEdges, size_t &hint, Variant &currentNode, Variant &connectNode, Variant &connectSecondNode){
     int alleleCombination = (currentNode.allele << 2) | (connectNode.allele << 1) | connectSecondNode.allele;
-    (*edgeCount)[connectNode.position][connectSecondNode.position][alleleCombination]++;
+    connectEdges.atFrom(hint, connectSecondNode.position)[alleleCombination]++;
 }
 
 ThreePointEdge VariantEdge::findThreePointEdge(int pos, int nextPos){
@@ -767,7 +769,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
     for (auto delIter = delReadIdx.begin(), nextdelIter = std::next(delReadIdx.begin(), 1); nextdelIter != delReadIdx.end(); delIter++ , nextdelIter++) {
         auto nowDelIter = *delIter+1;
         while (nowDelIter<*nextdelIter){
-            (*in_readVariant)[saveIter++]=(*in_readVariant)[nowDelIter++];
+            (*in_readVariant)[saveIter++]=std::move((*in_readVariant)[nowDelIter++]);
         }
     }
     in_readVariant->erase( std::next(in_readVariant->begin(), saveIter), in_readVariant->end());
@@ -775,28 +777,53 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
     //position, allele, VariantBases
     std::map<int, std::array<VariantBases, 2>> posAlleleCount;
     for(std::vector<ReadVariant>::iterator readIter = in_readVariant->begin() ; readIter != in_readVariant->end() ; readIter++ ){
-        for( auto variant : (*readIter).variantVec ){
-            posAlleleCount[variant.position][variant.allele].targetCount++;
-            for(auto offsetBaseIter : variant.offsetBase){
-                posAlleleCount[variant.position][variant.allele].offsetDiffRefCount[offsetBaseIter.first]++;
+        for( auto &variant : (*readIter).variantVec ){
+            VariantBases &variantBases = posAlleleCount[variant.position][variant.allele];
+            variantBases.targetCount++;
+            for(const auto &offsetBaseIter : variant.offsetBase){
+                variantBases.diffRefOffsets.push_back(offsetBaseIter.first);
             }
+            // offsetBase is only read here; release it so later copies and the stored reads stay small
+            std::vector<std::pair<int, char>>().swap(variant.offsetBase);
         }
     }
 
     std::vector<int> delPos;
-    for(const auto& posAlleleCountIter : posAlleleCount) {
-        const auto& alleleIter = posAlleleCountIter.second;
-        const auto& refOffsetMap = alleleIter[REF_ALLELE].offsetDiffRefCount;
-        const auto& altOffsetMap = alleleIter[ALT_ALLELE].offsetDiffRefCount;
+    // per-offset counts of the current position, indexed by offset - minOffset
+    std::vector<int> refOffsetCount, altOffsetCount;
+    for(auto& posAlleleCountIter : posAlleleCount) {
+        auto& alleleIter = posAlleleCountIter.second;
+        std::vector<int>& refOffsets = alleleIter[REF_ALLELE].diffRefOffsets;
+        std::vector<int>& altOffsets = alleleIter[ALT_ALLELE].diffRefOffsets;
         int targetAltCount = alleleIter[ALT_ALLELE].targetCount;
+        if(altOffsets.empty()){
+            continue;
+        }
+        // offsets lie in a small window around the variant, so count them densely
+        auto altRange = std::minmax_element(altOffsets.begin(), altOffsets.end());
+        int minOffset = *altRange.first;
+        int maxOffset = *altRange.second;
+        altOffsetCount.assign(maxOffset - minOffset + 1, 0);
+        refOffsetCount.assign(maxOffset - minOffset + 1, 0);
+        for(int offset : altOffsets){
+            altOffsetCount[offset - minOffset]++;
+        }
+        for(int offset : refOffsets){
+            if(offset >= minOffset && offset <= maxOffset){
+                refOffsetCount[offset - minOffset]++;
+            }
+        }
+        std::vector<int>().swap(refOffsets);
+        std::vector<int>().swap(altOffsets);
 
         int sameCount = 0;
-        for (const auto& altOffsetMapIter : altOffsetMap) {
-            int ra = 0;
-            if (refOffsetMap.count(altOffsetMapIter.first)) {
-                ra = refOffsetMap.at(altOffsetMapIter.first);
+        // visit each distinct ALT offset in ascending order with its ALT count (aa) and REF count (ra)
+        for (int offsetIdx = 0; offsetIdx <= maxOffset - minOffset; offsetIdx++) {
+            int aa = altOffsetCount[offsetIdx];
+            if(aa == 0){
+                continue;
             }
-            int aa = altOffsetMapIter.second;
+            int ra = refOffsetCount[offsetIdx];
             double condition1 = (double)aa / targetAltCount;
             double condition2 = (double)aa / (ra + aa);
             
@@ -832,7 +859,8 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
         // Creating a pseudo read which allows filtering out variants that should not be phased
         //ReadVariant tmpRead;
         // Visiting all the variants on the read
-        for( auto variant : (*readIter).variantVec ){
+        ReadVariant &mergeRead = mergeReadMap[(*readIter).read_name];
+        for( const auto &variant : (*readIter).variantVec ){
             readCount++;
             if(std::binary_search(delPos.begin(), delPos.end(), variant.position)){
                 continue;
@@ -845,7 +873,7 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
             }
             (*variantPosType)[variant.position].homozygous = variant.homozygous;
 
-            mergeReadMap[(*readIter).read_name].variantVec.push_back(variant);
+            mergeRead.variantVec.push_back(variant);
         }
     }    
     
@@ -862,25 +890,26 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
         
         while(variant1Iter != readIter->second.variantVec.end() && variant2Iter != readIter->second.variantVec.end() ){
             // create new edge if not exist
-            std::map<int,VariantEdge*>::iterator posIter = edgeList->find(variant1Iter->position);
-            if( posIter == edgeList->end() )
-                (*edgeList)[variant1Iter->position] = new VariantEdge(variant1Iter->position);
+            VariantEdge *&nodeSlot = (*edgeList)[variant1Iter->position];
+            if( nodeSlot == nullptr )
+                nodeSlot = new VariantEdge(variant1Iter->position);
+            auto node = nodeSlot;
 
             //count the ref and alt base amount on the variant
             if( (*variant1Iter).allele == 0 && (*readIter).second.fakeRead == false ) {
-                (*edgeList)[(*variant1Iter).position]->refcnt++ ;
+                node->refcnt++ ;
             }
             if( (*variant1Iter).allele == 1 && (*readIter).second.fakeRead == false ) {
-                (*edgeList)[(*variant1Iter).position]->altcnt++ ;
+                node->altcnt++ ;
             }
-            (*edgeList)[(*variant1Iter).position]->coverage++;
-            auto node = (*edgeList)[(*variant1Iter).position];
+            node->coverage++;
 
             auto lohIter = LOHSegments.begin();
             bool variant1InLOH = checkLOHRegion(lohIter, variant1Iter->position, LOHSegments);
             bool stopTransition = false;
             bool stateTransition = false;
             int addHetCount = 0, addHomCount = 0;
+            SubEdgeHint subEdgeHint;
             for(; addHetCount < params->connectAdjacent;){
                 bool variant2InLOH = checkLOHRegion(lohIter, variant2Iter->position, LOHSegments);
                 if(variant1InLOH != variant2InLOH){
@@ -897,13 +926,17 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
                 }
                 if(addHet){
                     addHetCount++;
+                    SortedVecMap<int, ThreePointEdge> *connectEdges = nullptr;
+                    size_t connectEdgesHint = 0;
                     for(int nextNextNode = 0 ; nextNextNode < params->somaticConnectAdjacent && addHetCount < params->somaticConnectAdjacent;){
                         if( variant3Iter == readIter->second.variantVec.end() ){
                             break;
                         }
                         if(variant3Iter->homozygous == false){
                             nextNextNode++;
-                            node->addSegmentEdge((*variant1Iter), (*variant2Iter), (*variant3Iter));
+                            if( connectEdges == nullptr )
+                                connectEdges = &(*node->edgeCount)[variant2Iter->position];
+                            node->addSegmentEdge(*connectEdges, connectEdgesHint, (*variant1Iter), (*variant2Iter), (*variant3Iter));
                         }
                         variant3Iter++;
                     }
@@ -911,10 +944,10 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
                 if(addHom || addHet){
                     // this allele support ref
                     if( variant1Iter->allele == 0 )
-                        node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
+                        node->ref->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead, &subEdgeHint);
                     // this allele support alt
                     if( (*variant1Iter).allele == 1 )
-                        node->alt->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead);
+                        node->alt->addSubEdge((*variant1Iter), (*variant2Iter), readIter->first, params->baseQuality, params->edgeWeight, (*readIter).second.fakeRead, &subEdgeHint);
                 }
                 // next snp
                 variant2Iter++;
