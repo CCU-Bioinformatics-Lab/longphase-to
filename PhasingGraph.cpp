@@ -780,11 +780,9 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
         for( auto &variant : (*readIter).variantVec ){
             VariantBases &variantBases = posAlleleCount[variant.position][variant.allele];
             variantBases.targetCount++;
-            for(const auto &offsetBaseIter : variant.offsetBase){
-                variantBases.diffRefOffsets.push_back(offsetBaseIter.first);
-            }
-            // offsetBase is only read here; release it so later copies and the stored reads stay small
-            std::vector<std::pair<int, char>>().swap(variant.offsetBase);
+            variantBases.diffRefOffsets.insert(variantBases.diffRefOffsets.end(), variant.diffRefOffsets.begin(), variant.diffRefOffsets.end());
+            // diffRefOffsets is only read here; release it so later copies and the stored reads stay small
+            std::vector<int8_t>().swap(variant.diffRefOffsets);
         }
     }
 

@@ -127,7 +127,8 @@ struct Variant{
     int quality;
     bool underHomopolymer;
     bool homozygous;
-    std::vector<std::pair<int, char>> offsetBase; //offset, base
+    // offsets (within +-windowSize of position) where the read base differs from the reference
+    std::vector<int8_t> diffRefOffsets;
 };
 
 enum MethylState {
