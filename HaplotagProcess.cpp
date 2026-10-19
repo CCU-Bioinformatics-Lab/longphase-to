@@ -310,6 +310,7 @@ void HaplotagProcess::tagRead(HaplotagParameters &params){
     // output writer
     int result = sam_hdr_write(out, bamHdr);
     // check index file
+    hts_idx_destroy(idx);
     if ((idx = sam_index_load(in, openBamFile.c_str())) == 0) {
         std::cerr<<"ERROR: Cannot open index for bam file\n";
         exit(1);
@@ -456,10 +457,12 @@ void HaplotagProcess::tagRead(HaplotagParameters &params){
             // write this alignment to result bam file
             result = sam_write1(out, bamHdr, aln);
         }
+        hts_itr_destroy(iter);
         std::cerr<< difftime(time(NULL), begin) << "s\n";
     }
     if(tagResult!=NULL){
         (*tagResult).close();
+        delete tagResult;
     }
     hts_idx_destroy(idx);
     bam_hdr_destroy(bamHdr);
@@ -688,7 +691,7 @@ std::string HaplotagProcess::judgeHaplotype(const  bam_hdr_t &bamHdr,const bam1_
         countMap[HAPLOTYPE2] += readSVHapCount[bam_get_qname(&aln)][1];
     }
 
-    double min,max;
+    double min = 0, max = 0;
     std::string hpResult = "0";
     getVote(countMap, min, max, hpResult);
     std::string readName = bam_get_qname(&aln);
@@ -725,8 +728,15 @@ std::string HaplotagProcess::judgeHaplotype(const  bam_hdr_t &bamHdr,const bam1_
 
         (*tagResult)<< bam_get_qname(&aln)                         << "\t"
                     << bamHdr.target_name[aln.core.tid]            << "\t"
-                    << aln.core.pos                                << "\t"
-                    << max/(max+min)                               << "\t"
+                    << aln.core.pos                                << "\t";
+        // no votes: no confidence value
+        if( max + min == 0 ){
+            (*tagResult)<< ".";
+        }
+        else{
+            (*tagResult)<< max/(max+min);
+        }
+        (*tagResult)<< "\t"
                     << hpResultStr                                 << "\t"
                     << psResultStr                                 << "\t"
                     << countMap[HAPLOTYPE1] + countMap[HAPLOTYPE2] << "\t"
@@ -754,7 +764,7 @@ std::string HaplotagProcess::judgeHaplotype(const  bam_hdr_t &bamHdr,const bam1_
 }
 
 HaplotagProcess::HaplotagProcess(HaplotagParameters params):
-totalAlignment(0),totalSupplementary(0),totalSecondary(0),totalUnmapped(0),totalTagCount(0),totalUnTagCount(0),processBegin(time(NULL)),integerPS(false)
+totalAlignment(0),totalSupplementary(0),totalSecondary(0),totalUnmapped(0),totalTagCount(0),totalUnTagCount(0),processBegin(time(NULL)),integerPS(false),parseSnpFile(false),parseSVFile(false),parseMODFile(false)
 {
     std::cerr<< "phased SNP file:   " << params.snpFile             << "\n";
     std::cerr<< "phased SV file:    " << params.svFile              << "\n";

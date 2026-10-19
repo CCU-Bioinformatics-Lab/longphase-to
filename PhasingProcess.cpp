@@ -273,8 +273,8 @@ PhasingProcess::PhasingProcess(PhasingParameters params)
     genomicWriter.measureTime("LGE", params.outputLGE, [&]() { genomicWriter.writeLGE(); });
     genomicWriter.measureTime("GE", params.outputGE, [&]() { genomicWriter.writeAllEvents(); });
     genomicWriter.measureTime("SNP", true, [&]() { snpFile.writeResult(chrPhasingResult, purity); });
-    genomicWriter.measureTime("SV", params.svFile != "", [&]() { svFile.writeResult(chrPhasingResult); });
-    genomicWriter.measureTime("MOD", params.modFile != "", [&]() { modFile.writeResult(chrPhasingResult); });
+    genomicWriter.measureTime("SV", params.svFile != "", [&]() { svFile.writeResult(chrPhasingResult, purity); });
+    genomicWriter.measureTime("MOD", params.modFile != "", [&]() { modFile.writeResult(chrPhasingResult, purity); });
 
     std::cerr<< "\ntotal process: " << difftime(time(NULL), processBegin) << "s\n";
 

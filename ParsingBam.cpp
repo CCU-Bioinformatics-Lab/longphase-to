@@ -46,6 +46,10 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
 
         // read file
         char *seq_ptr = faidx_fetch_seq(fai , (*iter).c_str() , 0 , last_pos.at(index)+5 , &ref_len);
+        if(seq_ptr == NULL){
+            std::cerr<<"ERROR: " << (*iter) << " not found in reference " << fastaFile << "\n";
+            exit(1);
+        }
         if(ref_len == 0){
             std::cout<<"nothing in reference file \n";
         }
@@ -1111,7 +1115,8 @@ std::map<int, std::map<std::string ,bool> > SVParser::getVariants(std::string ch
     return targetVariants;
 }
 
-void SVParser::writeResult(ChrPhasingResult &chrPhasingResult){
+void SVParser::writeResult(ChrPhasingResult &chrPhasingResult, double purity){
+    this->purity = purity;
     
     if( params->svFile.find("gz") != std::string::npos ){
         // .vcf.gz 
@@ -1259,21 +1264,40 @@ bool processCigarOperation(const uint32_t *cigar, int &cigarIndex, int cigarInde
     return false;
 }
 
-std::vector<std::pair<int, char>> getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int remainingBases, int refPos, int direction, int windowSize = 100){
+// windowSize must stay within int8_t range (offsets are stored as int8_t)
+void getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int remainingBases, int refPos, int direction, std::vector<int8_t> &offsets, int windowSize = 100){
     const int cigarIndexEnd = aln.core.n_cigar;
     const int readLen = aln.core.l_qseq;
     const int refLen = refString.length();
     int cigarOp = bam_cigar_op(cigar[cigarIndex]);
     const uint8_t *seq = bam_get_seq(&aln);
-    std::vector<std::pair<int, char>> offsetBase;
 
     
     for (int i = 1; i <= windowSize; i++){
+        // While the current op advances and does not run out within the next steps,
+        // walk them without the per-step CIGAR bookkeeping (same visits as the step below).
+        if (remainingBases >= 2 && !(cigarOp == DELETION || cigarOp == SKIP || cigarOp == N || cigarOp == EQ)){
+            const int lastStep = std::min(windowSize, i + remainingBases - 2);
+            remainingBases -= lastStep - i + 1;
+            for (; i <= lastStep; i++){
+                readPos += direction;
+                refPos += direction;
+                if (readPos > readLen || refPos > refLen || readPos < 0 || refPos < 0) {
+                    return;
+                }
+                if (seq_nt16_str[bam_seqi(seq, readPos)] != refString[refPos]){
+                    offsets.push_back(static_cast<int8_t>(i * direction));
+                }
+            }
+            if (i > windowSize){
+                return;
+            }
+        }
         remainingBases-- ;
         // next cigar
         if (remainingBases == 0 || remainingBases == -1){
             if(!processCigarOperation(cigar, cigarIndex, cigarIndexEnd, direction, remainingBases, readPos, refPos, cigarOp)){
-                return offsetBase;
+                return;
             }
         }
         if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N || cigarOp == EQ){
@@ -1282,18 +1306,17 @@ std::vector<std::pair<int, char>> getOrderWindowsDiffRef(const uint32_t *cigar, 
         readPos += direction;
         refPos += direction;
         if (readPos > readLen || refPos > refLen || readPos < 0 || refPos < 0) {
-            return offsetBase;
+            return;
         }
         char read_base = seq_nt16_str[bam_seqi(seq, readPos)];
         char ref_base = refString[refPos];
         if (read_base != ref_base){
-            offsetBase.push_back(std::make_pair(i * direction, read_base));
+            offsets.push_back(static_cast<int8_t>(i * direction));
         }
     }
-    return offsetBase;
 }
 
-std::vector<std::pair<int, char>> getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int readOffset, int refPos, int windowSize = 100){
+void getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int readOffset, int refPos, std::vector<int8_t> &offsets, int windowSize = 100){
     const int cigarOpLen = bam_cigar_oplen(cigar[cigarIndex]);
     const int cigarOp = bam_cigar_op(cigar[cigarIndex]);
     int ForwardRemainingBases = 0;
@@ -1304,16 +1327,8 @@ std::vector<std::pair<int, char>> getWindowsDiffRef(const uint32_t *cigar, int c
         ReversRemainingBases = readOffset > 0 ? readOffset : 0;
     }
 
-    std::vector<std::pair<int, char>> offsetBase;
-
-    auto appendBases = [&](int direction, int buffer) {
-        auto bases = getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, buffer, refPos, direction, windowSize);
-        offsetBase.insert(offsetBase.end(), bases.begin(), bases.end());
-    };
-
-    appendBases(-1, ReversRemainingBases);
-    appendBases(1, ForwardRemainingBases);
-    return offsetBase;
+    getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ReversRemainingBases, refPos, -1, offsets, windowSize);
+    getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ForwardRemainingBases, refPos, 1, offsets, windowSize);
 }
 
 static bool isCanonicalBaseCode(char base){
@@ -1753,6 +1768,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
                     
                     // The position of the variant exceeds the length of the read.
                     if( query_pos + offset + 1 > int(aln.core.l_qseq) ){
+                        delete tmpReadResult;
                         return;
                     }
 
@@ -1809,11 +1825,8 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
             
                     if( allele != -1 ){
                         // record snp result
-                        Variant *tmpVariant = new Variant(variantPos, allele, base_q, currentVariantIter->second.homozygous);
-                        std::vector<std::pair<int, char>> offsetBase = getWindowsDiffRef(cigar, i, aln, ref_string, query_pos, offset, variantPos);
-                        (*tmpVariant).offsetBase = offsetBase;
-                        (*tmpReadResult).variantVec.push_back( (*tmpVariant) );
-                        delete tmpVariant;                        
+                        (*tmpReadResult).variantVec.emplace_back(variantPos, allele, base_q, currentVariantIter->second.homozygous);
+                        getWindowsDiffRef(cigar, i, aln, ref_string, query_pos, offset, variantPos, (*tmpReadResult).variantVec.back().diffRefOffsets);
                     }
                     currentVariantIter++;
                     variantPos = currentVariantIter != currentVariants->end()
@@ -1869,6 +1882,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
                         int base_q = VARIANT_UNDEFINED;
                         
                         if( query_pos + 1 > aln.core.l_qseq ){
+                            delete tmpReadResult;
                             return;
                         }
 
@@ -1966,7 +1980,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
         !(*tmpReadResult).methylVec.empty();
     if(!(*tmpReadResult).variantVec.empty() || retainForMethylXgb){
       (*tmpReadResult).sort();
-      readVariantVec.push_back((*tmpReadResult));
+      readVariantVec.push_back(std::move(*tmpReadResult));
     }
     
     //std::cout<< "readname: " << bam_get_qname(&aln) << "\tnm_value: " << nm_value << "\tcigar_total_oplen: " << cigar_total_oplen << "\tcigar_clip_oplen: " << cigar_clip_oplen << "\tcigar_indel_oplen: " << cigar_indel_oplen << "\tmm_rate: " << mm_rate << "\n";
@@ -2009,7 +2023,8 @@ METHParser::METHParser(PhasingParameters &in_params, SnpParser &in_snpFile, SVPa
     }
 }
 
-void METHParser::writeResult(ChrPhasingResult &chrPhasingResult){
+void METHParser::writeResult(ChrPhasingResult &chrPhasingResult, double purity){
+    this->purity = purity;
     
     if( params->modFile.find("gz") != std::string::npos ){
         // .vcf.gz 
