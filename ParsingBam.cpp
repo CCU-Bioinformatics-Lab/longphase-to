@@ -1115,7 +1115,8 @@ std::map<int, std::map<std::string ,bool> > SVParser::getVariants(std::string ch
     return targetVariants;
 }
 
-void SVParser::writeResult(ChrPhasingResult &chrPhasingResult){
+void SVParser::writeResult(ChrPhasingResult &chrPhasingResult, double purity){
+    this->purity = purity;
     
     if( params->svFile.find("gz") != std::string::npos ){
         // .vcf.gz 
@@ -2022,7 +2023,8 @@ METHParser::METHParser(PhasingParameters &in_params, SnpParser &in_snpFile, SVPa
     }
 }
 
-void METHParser::writeResult(ChrPhasingResult &chrPhasingResult){
+void METHParser::writeResult(ChrPhasingResult &chrPhasingResult, double purity){
+    this->purity = purity;
     
     if( params->modFile.find("gz") != std::string::npos ){
         // .vcf.gz 

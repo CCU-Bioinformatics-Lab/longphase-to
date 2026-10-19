@@ -209,7 +209,7 @@ class SVParser : public BaseVairantParser{
             
         std::map<int, std::map<std::string ,bool> > getVariants(std::string chrName);  
 
-        void writeResult(ChrPhasingResult &chrPhasingResult);
+        void writeResult(ChrPhasingResult &chrPhasingResult, double purity);
 
         bool findSV(std::string chr, int posistion);
 
@@ -242,7 +242,7 @@ class METHParser : public BaseVairantParser{
         METHParser(PhasingParameters &params, SnpParser &snpFile, SVParser &svFile);
         ~METHParser();
 		
-		void writeResult(ChrPhasingResult &chrPhasingResult);
+		void writeResult(ChrPhasingResult &chrPhasingResult, double purity);
 
         bool checkType(const VariantType type) const override;
 };
