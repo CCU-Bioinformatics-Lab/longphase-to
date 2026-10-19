@@ -25,8 +25,11 @@ MethFastaParser::MethFastaParser(std::string fastaFile, std::vector<ReferenceChr
         int ref_len = 0;
         seqname = faidx_iseq(fai, i);
         seqlen = faidx_seq_len(fai, seqname);
-        chrInfo.emplace_back(seqname, faidx_fetch_seq(fai , seqname , 0 ,seqlen+1 , &ref_len), seqlen);
+        char *seq = faidx_fetch_seq(fai , seqname , 0 ,seqlen+1 , &ref_len);
+        chrInfo.emplace_back(seqname, seq, seqlen);
+        free(seq);
     }
+    fai_destroy(fai);
 }
 
 MethFastaParser::~MethFastaParser(){
@@ -89,6 +92,7 @@ void MethBamParser::detectMeth(std::string chrName, int chr_len, htsThreadPool &
             parse_CIGAR(*bamHdr,*aln, readVariantVec);
 
         }
+        hts_itr_destroy(iter);
         hts_idx_destroy(idx);
         bam_hdr_destroy(bamHdr);
         bam_destroy1(aln);
@@ -143,6 +147,7 @@ void MethBamParser::parse_CIGAR(const bam_hdr_t &bamHdr,const bam1_t &aln, std::
     int n = bam_next_basemod(&aln, mod_state, mods, 5, &pos);
     if( n <= 0 ){ 
         hts_base_mod_state_free(mod_state);
+        delete tmpReadResult;
         return;
     }
     
@@ -615,6 +620,8 @@ void MethylationGraph::destroy(){
         edgeIter->second->alt->destroy();
         delete edgeIter->second->ref;
         delete edgeIter->second->alt;
+        delete edgeIter->second->edgeCount;
+        delete edgeIter->second;
     }
     
     for( auto nodeIter = nodeInfo->begin() ; nodeIter != nodeInfo->end() ; nodeIter++ ){
