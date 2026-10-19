@@ -46,6 +46,10 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
 
         // read file
         char *seq_ptr = faidx_fetch_seq(fai , (*iter).c_str() , 0 , last_pos.at(index)+5 , &ref_len);
+        if(seq_ptr == NULL){
+            std::cerr<<"ERROR: " << (*iter) << " not found in reference " << fastaFile << "\n";
+            exit(1);
+        }
         if(ref_len == 0){
             std::cout<<"nothing in reference file \n";
         }
