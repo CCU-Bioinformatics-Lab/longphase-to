@@ -757,7 +757,7 @@ std::string HaplotagProcess::judgeHaplotype(const  bam_hdr_t &bamHdr,const bam1_
 }
 
 HaplotagProcess::HaplotagProcess(HaplotagParameters params):
-totalAlignment(0),totalSupplementary(0),totalSecondary(0),totalUnmapped(0),totalTagCount(0),totalUnTagCount(0),processBegin(time(NULL)),integerPS(false)
+totalAlignment(0),totalSupplementary(0),totalSecondary(0),totalUnmapped(0),totalTagCount(0),totalUnTagCount(0),processBegin(time(NULL)),integerPS(false),parseSnpFile(false),parseSVFile(false),parseMODFile(false)
 {
     std::cerr<< "phased SNP file:   " << params.snpFile             << "\n";
     std::cerr<< "phased SV file:    " << params.svFile              << "\n";
