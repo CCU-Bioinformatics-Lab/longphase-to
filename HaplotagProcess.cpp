@@ -310,6 +310,7 @@ void HaplotagProcess::tagRead(HaplotagParameters &params){
     // output writer
     int result = sam_hdr_write(out, bamHdr);
     // check index file
+    hts_idx_destroy(idx);
     if ((idx = sam_index_load(in, openBamFile.c_str())) == 0) {
         std::cerr<<"ERROR: Cannot open index for bam file\n";
         exit(1);
@@ -456,10 +457,12 @@ void HaplotagProcess::tagRead(HaplotagParameters &params){
             // write this alignment to result bam file
             result = sam_write1(out, bamHdr, aln);
         }
+        hts_itr_destroy(iter);
         std::cerr<< difftime(time(NULL), begin) << "s\n";
     }
     if(tagResult!=NULL){
         (*tagResult).close();
+        delete tagResult;
     }
     hts_idx_destroy(idx);
     bam_hdr_destroy(bamHdr);
