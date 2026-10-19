@@ -46,6 +46,10 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
 
         // read file
         char *seq_ptr = faidx_fetch_seq(fai , (*iter).c_str() , 0 , last_pos.at(index)+5 , &ref_len);
+        if(seq_ptr == NULL){
+            std::cerr<<"ERROR: " << (*iter) << " not found in reference " << fastaFile << "\n";
+            exit(1);
+        }
         if(ref_len == 0){
             std::cout<<"nothing in reference file \n";
         }
@@ -1111,7 +1115,8 @@ std::map<int, std::map<std::string ,bool> > SVParser::getVariants(std::string ch
     return targetVariants;
 }
 
-void SVParser::writeResult(ChrPhasingResult &chrPhasingResult){
+void SVParser::writeResult(ChrPhasingResult &chrPhasingResult, double purity){
+    this->purity = purity;
     
     if( params->svFile.find("gz") != std::string::npos ){
         // .vcf.gz 
@@ -2018,7 +2023,8 @@ METHParser::METHParser(PhasingParameters &in_params, SnpParser &in_snpFile, SVPa
     }
 }
 
-void METHParser::writeResult(ChrPhasingResult &chrPhasingResult){
+void METHParser::writeResult(ChrPhasingResult &chrPhasingResult, double purity){
+    this->purity = purity;
     
     if( params->modFile.find("gz") != std::string::npos ){
         // .vcf.gz 
