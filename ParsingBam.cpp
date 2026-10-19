@@ -1763,6 +1763,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
                     
                     // The position of the variant exceeds the length of the read.
                     if( query_pos + offset + 1 > int(aln.core.l_qseq) ){
+                        delete tmpReadResult;
                         return;
                     }
 
@@ -1876,6 +1877,7 @@ void BamParser::get_snp(const bam_hdr_t &bamHdr, const bam1_t &aln, std::vector<
                         int base_q = VARIANT_UNDEFINED;
                         
                         if( query_pos + 1 > aln.core.l_qseq ){
+                            delete tmpReadResult;
                             return;
                         }
 
