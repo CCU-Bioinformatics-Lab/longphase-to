@@ -11,6 +11,52 @@ typedef std::map<std::string, int> ReadBaseMap;
 // rrr, rra, rar, raa, arr, ara, arr, aar, aaa
 using ThreePointEdge = std::array<float, 2*2*2>;
 
+// Ordered map stored as a sorted vector. Same key order and lookup semantics as
+// std::map for the operations used here, without one heap node per entry.
+template<class K, class V>
+class SortedVecMap{
+    public:
+        typedef std::pair<K, V> value_type;
+        typedef typename std::vector<value_type>::iterator iterator;
+        typedef typename std::vector<value_type>::const_iterator const_iterator;
+
+        V& operator[](const K &key){
+            iterator it = std::lower_bound(data.begin(), data.end(), key, keyLess);
+            if( it == data.end() || it->first != key )
+                it = data.insert(it, value_type(key, V()));
+            return it->second;
+        }
+        // Same as operator[] for callers that visit keys in non-decreasing order:
+        // scans forward from the previous result instead of searching from scratch.
+        // Start each ordered sequence with hint = 0.
+        V& atFrom(size_t &hint, const K &key){
+            size_t idx = hint > 0 ? hint - 1 : 0;
+            while( idx < data.size() && data[idx].first < key )
+                idx++;
+            if( idx == data.size() || data[idx].first != key )
+                data.insert(data.begin() + idx, value_type(key, V()));
+            hint = idx + 1;
+            return data[idx].second;
+        }
+        iterator find(const K &key){
+            iterator it = std::lower_bound(data.begin(), data.end(), key, keyLess);
+            return ( it != data.end() && it->first == key ) ? it : data.end();
+        }
+        const_iterator find(const K &key) const{
+            const_iterator it = std::lower_bound(data.begin(), data.end(), key, keyLess);
+            return ( it != data.end() && it->first == key ) ? it : data.end();
+        }
+        iterator begin(){ return data.begin(); }
+        iterator end(){ return data.end(); }
+        const_iterator begin() const{ return data.begin(); }
+        const_iterator end() const{ return data.end(); }
+        void clear(){ data.clear(); }
+
+    private:
+        std::vector<value_type> data;
+        static bool keyLess(const value_type &a, const K &b){ return a.first < b; }
+};
+
 enum EdgeType{
     EDGE_RRR = 0,
     EDGE_RRA = 1,
@@ -90,6 +136,12 @@ constexpr std::array<SomaticPattern, 9> lowSomaticPatterns = {{
     {{EDGE_AAR, EDGE_AAA, EDGE_ARR}, RIGHT_LOW_3},
 }};
 
+// Scan positions for SortedVecMap::atFrom while one read adds edges in position order.
+struct SubEdgeHint{
+    size_t ref = 0;
+    size_t alt = 0;
+};
+
 class SubEdge{
     
     private:
@@ -103,8 +155,8 @@ class SubEdge{
         std::map<int, int> *refQuality;
         std::map<int, int> *altQuality;
         // < next position, read count >
-        std::map<int, float> *refReadCount;
-        std::map<int, float> *altReadCount;
+        SortedVecMap<int, float> *refReadCount;
+        SortedVecMap<int, float> *altReadCount;
 
     public:
         
@@ -113,7 +165,7 @@ class SubEdge{
         
         void destroy();
         
-        void addSubEdge(Variant &currentNode, Variant &connectNode, std::string readName, int baseQuality, double edgeWeight, bool fakeRead);
+        void addSubEdge(Variant &currentNode, Variant &connectNode, const std::string &readName, int baseQuality, double edgeWeight, bool fakeRead, SubEdgeHint *hint = nullptr);
         std::pair<float,float> BestPair(int targetPos);
         float getRefReadCount(int targetPos);
         float getAltReadCount(int targetPos);        
@@ -148,7 +200,7 @@ struct VariantEdge{
     int currPos;
     SubEdge* alt;
     SubEdge* ref;
-    std::map<int, std::map<int, ThreePointEdge>> *edgeCount;
+    SortedVecMap<int, SortedVecMap<int, ThreePointEdge>> *edgeCount;
     int refcnt ; // count the ref base amount
     int altcnt ; // count the alt base amount
     double vaf = 0; // count the vaf of the left snp
@@ -163,7 +215,8 @@ struct VariantEdge{
     // rrr, rra, rar, raa, arr, ara, aar, aaa
     ThreePointEdge findThreePointEdge(int pos, int nextPos);
 
-    void addSegmentEdge(Variant &currentNode, Variant &connectNode, Variant &connectSecondNode);
+    // connectEdges is (*edgeCount)[connectNode.position]; hint as in SortedVecMap::atFrom
+    void addSegmentEdge(SortedVecMap<int, ThreePointEdge> &connectEdges, size_t &hint, Variant &currentNode, Variant &connectNode, Variant &connectSecondNode);
 
     bool get_fakeSnp();
 };
@@ -184,7 +237,7 @@ struct EdgeResult{
 
 struct VariantBases{
     int targetCount = 0;
-    std::map<int, int> offsetDiffRefCount; //offset, diff ref count
+    std::vector<int> diffRefOffsets; //offset of each base that differs from the reference, one entry per observation
 };
 
 struct MethylXgbApplySummary {
