@@ -30,6 +30,29 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
     faidx_t *fai = NULL;
     fai = fai_load(fastaFile.c_str());
     
+    // Fetch the chromosome sequences in parallel. Each fetch is independent:
+    // it opens its own faidx handle (faidx_t is not shared between threads)
+    // and makes exactly the same faidx_fetch_seq call as the serial loop
+    // below, storing the returned buffer and length by chromosome index.
+    // Everything else (messages, map updates, string copies, frees) stays in
+    // the serial loop, in the original chromosome order.
+    std::vector<char*> fetchedSeq(chrName.size(), NULL);
+    std::vector<int> fetchedLen(chrName.size(), 0);
+    bool prefetched = (fai != NULL && numThreads > 1);
+    if( prefetched ){
+        #pragma omp parallel for schedule(dynamic,1) num_threads(numThreads)
+        for(int index = 0 ; index < (int)chrName.size() ; index++){
+            if( last_pos.at(index) == -1){
+                continue;
+            }
+            faidx_t *threadFai = fai_load(fastaFile.c_str());
+            int ref_len = 0;
+            fetchedSeq[index] = faidx_fetch_seq(threadFai , chrName[index].c_str() , 0 , last_pos.at(index)+5 , &ref_len);
+            fetchedLen[index] = ref_len;
+            fai_destroy(threadFai);
+        }
+    }
+
     // iterating all chr
     for(std::vector<std::string>::iterator iter = chrName.begin() ; iter != chrName.end() ; iter++){
         
@@ -45,7 +68,14 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
         int ref_len = 0;
 
         // read file
-        char *seq_ptr = faidx_fetch_seq(fai , (*iter).c_str() , 0 , last_pos.at(index)+5 , &ref_len);
+        char *seq_ptr;
+        if( prefetched ){
+            seq_ptr = fetchedSeq[index];
+            ref_len = fetchedLen[index];
+        }
+        else{
+            seq_ptr = faidx_fetch_seq(fai , (*iter).c_str() , 0 , last_pos.at(index)+5 , &ref_len);
+        }
         if(seq_ptr == NULL){
             std::cerr<<"ERROR: " << (*iter) << " not found in reference " << fastaFile << "\n";
             exit(1);
