@@ -1330,8 +1330,9 @@ void getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln,
         ReversRemainingBases = readOffset > 0 ? readOffset : 0;
     }
 
-    // Collect both directions in a local buffer and append once, so offsets is sized to the
-    // number of hits instead of growing by push_back (same values, same order).
+    // Collect both directions in a local buffer and append once (same values, same order) instead
+    // of growing offsets by push_back. Reserve the capacity that push_back doubling would have
+    // reached, so the allocation kept until addEdge has the same size as before, in one allocation.
     int8_t stackBuf[256];
     std::vector<int8_t> heapBuf;
     int8_t *buf = stackBuf;
@@ -1341,6 +1342,13 @@ void getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln,
     }
     int count = getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ReversRemainingBases, refPos, -1, buf, windowSize);
     count += getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ForwardRemainingBases, refPos, 1, buf + count, windowSize);
+    if (count > 0){
+        size_t cap = offsets.capacity();
+        while (cap < offsets.size() + static_cast<size_t>(count)){
+            cap = cap ? 2 * cap : 1;
+        }
+        offsets.reserve(cap);
+    }
     offsets.insert(offsets.end(), buf, buf + count);
 }
 
