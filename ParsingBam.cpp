@@ -1265,7 +1265,9 @@ bool processCigarOperation(const uint32_t *cigar, int &cigarIndex, int cigarInde
 }
 
 // windowSize must stay within int8_t range (offsets are stored as int8_t)
-void getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int remainingBases, int refPos, int direction, std::vector<int8_t> &offsets, int windowSize = 100){
+// Writes the offsets of this direction to out (at most windowSize entries) and returns how many.
+int getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int remainingBases, int refPos, int direction, int8_t *out, int windowSize = 100){
+    int count = 0;
     const int cigarIndexEnd = aln.core.n_cigar;
     const int readLen = aln.core.l_qseq;
     const int refLen = refString.length();
@@ -1283,21 +1285,21 @@ void getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t 
                 readPos += direction;
                 refPos += direction;
                 if (readPos > readLen || refPos > refLen || readPos < 0 || refPos < 0) {
-                    return;
+                    return count;
                 }
                 if (seq_nt16_str[bam_seqi(seq, readPos)] != refString[refPos]){
-                    offsets.push_back(static_cast<int8_t>(i * direction));
+                    out[count++] = static_cast<int8_t>(i * direction);
                 }
             }
             if (i > windowSize){
-                return;
+                return count;
             }
         }
         remainingBases-- ;
         // next cigar
         if (remainingBases == 0 || remainingBases == -1){
             if(!processCigarOperation(cigar, cigarIndex, cigarIndexEnd, direction, remainingBases, readPos, refPos, cigarOp)){
-                return;
+                return count;
             }
         }
         if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N || cigarOp == EQ){
@@ -1306,14 +1308,15 @@ void getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t 
         readPos += direction;
         refPos += direction;
         if (readPos > readLen || refPos > refLen || readPos < 0 || refPos < 0) {
-            return;
+            return count;
         }
         char read_base = seq_nt16_str[bam_seqi(seq, readPos)];
         char ref_base = refString[refPos];
         if (read_base != ref_base){
-            offsets.push_back(static_cast<int8_t>(i * direction));
+            out[count++] = static_cast<int8_t>(i * direction);
         }
     }
+    return count;
 }
 
 void getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int readOffset, int refPos, std::vector<int8_t> &offsets, int windowSize = 100){
@@ -1327,8 +1330,18 @@ void getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln,
         ReversRemainingBases = readOffset > 0 ? readOffset : 0;
     }
 
-    getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ReversRemainingBases, refPos, -1, offsets, windowSize);
-    getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ForwardRemainingBases, refPos, 1, offsets, windowSize);
+    // Collect both directions in a local buffer and append once, so offsets is sized to the
+    // number of hits instead of growing by push_back (same values, same order).
+    int8_t stackBuf[256];
+    std::vector<int8_t> heapBuf;
+    int8_t *buf = stackBuf;
+    if (windowSize > 128){
+        heapBuf.resize(2 * static_cast<size_t>(windowSize));
+        buf = heapBuf.data();
+    }
+    int count = getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ReversRemainingBases, refPos, -1, buf, windowSize);
+    count += getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ForwardRemainingBases, refPos, 1, buf + count, windowSize);
+    offsets.insert(offsets.end(), buf, buf + count);
 }
 
 static bool isCanonicalBaseCode(char base){
