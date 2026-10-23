@@ -237,7 +237,7 @@ struct EdgeResult{
 
 struct VariantBases{
     int targetCount = 0;
-    std::vector<int> diffRefOffsets; //offset of each base that differs from the reference, one entry per observation
+    std::vector<int8_t> diffRefOffsets; //offset of each base that differs from the reference, one entry per observation; values in +-windowSize, copied unchanged from Variant::diffRefOffsets (int8_t)
 };
 
 struct MethylXgbApplySummary {

@@ -791,8 +791,8 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
     std::vector<int> refOffsetCount, altOffsetCount;
     for(auto& posAlleleCountIter : posAlleleCount) {
         auto& alleleIter = posAlleleCountIter.second;
-        std::vector<int>& refOffsets = alleleIter[REF_ALLELE].diffRefOffsets;
-        std::vector<int>& altOffsets = alleleIter[ALT_ALLELE].diffRefOffsets;
+        std::vector<int8_t>& refOffsets = alleleIter[REF_ALLELE].diffRefOffsets;
+        std::vector<int8_t>& altOffsets = alleleIter[ALT_ALLELE].diffRefOffsets;
         int targetAltCount = alleleIter[ALT_ALLELE].targetCount;
         if(altOffsets.empty()){
             continue;
@@ -811,8 +811,8 @@ void VairiantGraph::addEdge(std::vector<ReadVariant> *in_readVariant, std::vecto
                 refOffsetCount[offset - minOffset]++;
             }
         }
-        std::vector<int>().swap(refOffsets);
-        std::vector<int>().swap(altOffsets);
+        std::vector<int8_t>().swap(refOffsets);
+        std::vector<int8_t>().swap(altOffsets);
 
         int sameCount = 0;
         // visit each distinct ALT offset in ascending order with its ALT count (aa) and REF count (ra)
