@@ -469,8 +469,18 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
     else{
         // same tokens as std::istream_iterator<std::string> on an istringstream (classic-locale
         // whitespace), written into a vector reused across lines
-        std::vector<std::string> &fields = writeFields;
-        splitOnClassicSpace(input, fields);
+        splitOnClassicSpace(input, writeFields);
+        // A line with fewer than SAMPLE+1 fields is indexed past its end below, as in the original
+        // code. Such a line gets a vector built for it alone, grown one element at a time like the
+        // original istream_iterator construction (same size and capacity), instead of the reused one.
+        std::vector<std::string> shortFields;
+        const bool shortLine = writeFields.size() <= static_cast<size_t>(SAMPLE);
+        if( shortLine ){
+            for(size_t i = 0; i < writeFields.size(); ++i){
+                shortFields.emplace_back(std::move(writeFields[i]));
+            }
+        }
+        std::vector<std::string> &fields = shortLine ? shortFields : writeFields;
         if( fields.size() == 0 )
             return;
         FormatSample formatSample(fields);
