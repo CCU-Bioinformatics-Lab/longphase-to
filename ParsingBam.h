@@ -118,6 +118,9 @@ class BaseVairantParser{
         bool hasLPNonSomaticFilter = false;
         bool hasLPPONFilter = false;
         virtual bool isPON(const std::string &chr, int pos, const std::vector<std::string> &fields) const;
+        // scratch reused by writeLine across lines (fields of the current line, output line)
+        std::vector<std::string> writeFields;
+        std::string writeLineBuf;
 
     public:
         BaseVairantParser();
