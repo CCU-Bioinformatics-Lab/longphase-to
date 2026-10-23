@@ -1344,9 +1344,15 @@ bool processCigarOperation(const uint32_t *cigar, int &cigarIndex, int cigarInde
     return false;
 }
 
-// windowSize must stay within int8_t range (offsets are stored as int8_t)
-// Writes the offsets of this direction to out (at most windowSize entries) and returns how many.
-int getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int remainingBases, int refPos, int direction, int8_t *out, int windowSize = 100){
+// Window size of the diff-ref walk (develop's default argument, the only value ever used).
+// Offsets are stored as int8_t, so every offset (+-1 .. +-kDiffRefWindow) must fit in int8_t;
+// the window is a compile-time constant so no caller can pass a size that would narrow.
+static const int kDiffRefWindow = 100;
+static_assert(kDiffRefWindow >= 1 && kDiffRefWindow <= 127, "diff-ref offsets are stored as int8_t");
+
+// Writes the offsets of this direction to out (at most kDiffRefWindow entries) and returns how many.
+int getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int remainingBases, int refPos, int direction, int8_t *out){
+    const int windowSize = kDiffRefWindow;
     int count = 0;
     const int cigarIndexEnd = aln.core.n_cigar;
     const int readLen = aln.core.l_qseq;
@@ -1399,7 +1405,7 @@ int getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &
     return count;
 }
 
-void getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int readOffset, int refPos, std::vector<int8_t> &offsets, int windowSize = 100){
+void getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln, const std::string &refString, int readPos, int readOffset, int refPos, std::vector<int8_t> &offsets){
     const int cigarOpLen = bam_cigar_oplen(cigar[cigarIndex]);
     const int cigarOp = bam_cigar_op(cigar[cigarIndex]);
     int ForwardRemainingBases = 0;
@@ -1413,15 +1419,10 @@ void getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln,
     // Collect both directions in a local buffer and append once (same values, same order) instead
     // of growing offsets by push_back. Reserve the capacity that push_back doubling would have
     // reached, so the allocation kept until addEdge has the same size as before, in one allocation.
-    int8_t stackBuf[256];
-    std::vector<int8_t> heapBuf;
-    int8_t *buf = stackBuf;
-    if (windowSize > 128){
-        heapBuf.resize(2 * static_cast<size_t>(windowSize));
-        buf = heapBuf.data();
-    }
-    int count = getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ReversRemainingBases, refPos, -1, buf, windowSize);
-    count += getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ForwardRemainingBases, refPos, 1, buf + count, windowSize);
+    // each direction writes at most kDiffRefWindow offsets
+    int8_t buf[2 * kDiffRefWindow];
+    int count = getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ReversRemainingBases, refPos, -1, buf);
+    count += getOrderWindowsDiffRef(cigar, cigarIndex, aln, refString, readPos, ForwardRemainingBases, refPos, 1, buf + count);
     if (count > 0){
         size_t cap = offsets.capacity();
         while (cap < offsets.size() + static_cast<size_t>(count)){
