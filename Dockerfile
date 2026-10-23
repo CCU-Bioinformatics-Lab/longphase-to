@@ -21,7 +21,7 @@ RUN autoreconf -i && \
 # ========= Runtime stage =========
 FROM ubuntu:20.04 AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
-ARG VERSION=v1.1.2
+ARG VERSION=v1.1.3
 # install runtime dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
