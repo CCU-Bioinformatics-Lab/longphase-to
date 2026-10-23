@@ -378,6 +378,27 @@ void BaseVairantParser::unCompressInput(std::string variantFile, std::string res
     }
 }
 
+// Split on the characters the classic "C" locale classifies as space (' ', \t, \n, \v, \f, \r),
+// skipping runs of them: the tokens std::istream_iterator<std::string> yields from an istringstream
+// under the default global locale (the program never changes it). Reuses the strings already in out.
+static void splitOnClassicSpace(const std::string &input, std::vector<std::string> &out){
+    const char *p = input.data();
+    const char *end = p + input.size();
+    size_t n = 0;
+    auto isSpace = [](char c){ return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r'; };
+    while( true ){
+        while( p < end && isSpace(*p) ) ++p;
+        if( p == end ) break;
+        const char *q = p;
+        while( q < end && !isSpace(*q) ) ++q;
+        if( n < out.size() ) out[n].assign(p, q - p);
+        else out.emplace_back(p, q - p);
+        ++n;
+        p = q;
+    }
+    out.resize(n);
+}
+
 void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, ChrPhasingResult &chrPhasingResult){
     // header
     if( input.substr(0, 2) == "##" ){
@@ -423,8 +444,10 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
         resultVcf << input << "\n";
     }
     else{
-        std::istringstream iss(input);
-        std::vector<std::string> fields((std::istream_iterator<std::string>(iss)),std::istream_iterator<std::string>());
+        // same tokens as std::istream_iterator<std::string> on an istringstream (classic-locale
+        // whitespace), written into a vector reused across lines
+        std::vector<std::string> &fields = writeFields;
+        splitOnClassicSpace(input, fields);
         if( fields.size() == 0 )
             return;
         FormatSample formatSample(fields);
@@ -478,12 +501,16 @@ void BaseVairantParser::writeLine(std::string &input, std::ofstream &resultVcf, 
             }
         }
 
+        // build the whole line, then hand it to the stream once (same bytes, same order)
+        std::string &outLine = writeLineBuf;
+        outLine.clear();
         for(std::vector<std::string>::iterator fieldIter = fields.begin(); fieldIter != fields.end(); ++fieldIter){
             if( fieldIter != fields.begin() )
-                resultVcf<< "\t";
-            resultVcf << (*fieldIter);
+                outLine.push_back('\t');
+            outLine.append(*fieldIter);
         }
-        resultVcf << "\n";
+        outLine.push_back('\n');
+        resultVcf.write(outLine.data(), outLine.size());
     }
 }
 
