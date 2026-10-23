@@ -36,21 +36,44 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
     // below, storing the returned buffer and length by chromosome index.
     // Everything else (messages, map updates, string copies, frees) stays in
     // the serial loop, in the original chromosome order.
+    // The parallel fetch is used only when every chromosome that will be
+    // fetched is in the index (faidx_has_seq is the same silent lookup that
+    // faidx_fetch_seq starts with); otherwise the serial loop fetches them all
+    // itself, so a missing name is reported and fails where it did before.
+    // htslib logging is off while the workers run; a chromosome whose worker
+    // could not load the index or fetch is fetched again by the serial loop
+    // with the main handle, which reports any error at its original position.
     std::vector<char*> fetchedSeq(chrName.size(), NULL);
     std::vector<int> fetchedLen(chrName.size(), 0);
-    bool prefetched = (fai != NULL && numThreads > 1);
+    std::vector<char> fetchFailed(chrName.size(), 0);
+    bool prefetched = (fai != NULL && numThreads > 1 && last_pos.size() == chrName.size());
+    for(int index = 0 ; prefetched && index < (int)chrName.size() ; index++){
+        if( last_pos[index] != -1 && !faidx_has_seq(fai, chrName[index].c_str()) ){
+            prefetched = false;
+        }
+    }
     if( prefetched ){
+        const enum htsLogLevel savedLogLevel = hts_get_log_level();
+        hts_set_log_level(HTS_LOG_OFF);
         #pragma omp parallel for schedule(dynamic,1) num_threads(numThreads)
         for(int index = 0 ; index < (int)chrName.size() ; index++){
             if( last_pos.at(index) == -1){
                 continue;
             }
             faidx_t *threadFai = fai_load(fastaFile.c_str());
+            if( threadFai == NULL ){
+                fetchFailed[index] = 1;
+                continue;
+            }
             int ref_len = 0;
             fetchedSeq[index] = faidx_fetch_seq(threadFai , chrName[index].c_str() , 0 , last_pos.at(index)+5 , &ref_len);
             fetchedLen[index] = ref_len;
+            if( fetchedSeq[index] == NULL ){
+                fetchFailed[index] = 1;
+            }
             fai_destroy(threadFai);
         }
+        hts_set_log_level(savedLogLevel);
     }
 
     // iterating all chr
@@ -69,7 +92,7 @@ FastaParser::FastaParser(std::string fastaFile,  std::vector<std::string> chrNam
 
         // read file
         char *seq_ptr;
-        if( prefetched ){
+        if( prefetched && !fetchFailed[index] ){
             seq_ptr = fetchedSeq[index];
             ref_len = fetchedLen[index];
         }
