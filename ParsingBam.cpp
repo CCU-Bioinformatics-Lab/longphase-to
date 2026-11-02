@@ -1374,7 +1374,7 @@ int getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &
     for (int i = 1; i <= windowSize; i++){
         // While the current op advances and does not run out within the next steps,
         // walk them without the per-step CIGAR bookkeeping (same visits as the step below).
-        if (remainingBases >= 2 && !(cigarOp == DELETION || cigarOp == SKIP || cigarOp == N || cigarOp == EQ)){
+        if (remainingBases >= 2 && !(cigarOp == DELETION || cigarOp == SKIP || cigarOp == N)){
             const int lastStep = std::min(windowSize, i + remainingBases - 2);
             remainingBases -= lastStep - i + 1;
             for (; i <= lastStep; i++){
@@ -1398,7 +1398,8 @@ int getOrderWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &
                 return count;
             }
         }
-        if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N || cigarOp == EQ){
+        // '=' (EQ) consumes read and reference bases like M and X, so it is walked and compared here too.
+        if (cigarOp == DELETION || cigarOp == SKIP || cigarOp == N){
             continue;
         }
         readPos += direction;
@@ -1423,7 +1424,9 @@ void getWindowsDiffRef(const uint32_t *cigar, int cigarIndex, const bam1_t &aln,
     readPos += readOffset;
     if(cigarOp != INSERTION){
         ForwardRemainingBases = cigarOpLen - readOffset > 0 ? cigarOpLen - readOffset : 0;
-        ReversRemainingBases = readOffset > 0 ? readOffset : 0;
+        // Count the variant base itself, as ForwardRemainingBases does, so that the reverse walk
+        // switches to the previous CIGAR operation only after the operation's first base.
+        ReversRemainingBases = readOffset + 1;
     }
 
     // Collect both directions in a local buffer and append once (same values, same order) instead
